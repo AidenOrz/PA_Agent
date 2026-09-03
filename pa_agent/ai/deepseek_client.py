@@ -138,7 +138,12 @@ def supports_kv_prefix_chain(settings: AIProviderSettings | None) -> bool:
         return False
     if _is_openclaw_agent_model(settings.model):
         return False
-    return _is_deepseek_native(settings.base_url) or _is_deepseek_model(settings.model)
+    # B.AI 代理真实 DeepSeek 模型，同样支持 KV prefix cache（两级推理链）。
+    return (
+        _is_deepseek_native(settings.base_url)
+        or _is_bai(settings.base_url)
+        or _is_deepseek_model(settings.model)
+    )
 
 
 def _extract_cached_prompt_tokens(usage: Any) -> int:
@@ -199,6 +204,22 @@ def _is_sensenova(base_url: str) -> bool:
     return "sensenova.cn" in (base_url or "").lower()
 
 
+def _is_bai(base_url: str) -> bool:
+    """B.AI (api.b.ai) OpenAI-compatible gateway.
+
+    B.AI 提供 deepseek-v4-flash 与 deepseek-v4-flash-vision-exp 等真实 DeepSeek
+    推理模型。与 DSH 内置的 B.AI 路由一致：
+      - thinking 请求格式用 DeepSeek 原生风格（thinking.type=adaptive +
+        output_config.effort），即 thinkingFormat=deepseek；
+      - max_tokens 上限极低（官方路由配 8192），远超默认 _GLOBAL_MAX_OUTPUT_TOKENS
+        （384000）会直接 400；
+      - 多轮对话必须回传 assistant 消息的 reasoning_content。
+    注意：检测 base_url 优先于 _is_deepseek_model —— 通过 B.AI 代理调用
+    deepseek 模型时，限流与格式随网关而非 DeepSeek 原生。
+    """
+    return "b.ai" in (base_url or "").lower()
+
+
 # Packy claude-officially returns 400 if max_tokens exceeds model output cap.
 _PACKY_CLAUDE_MAX_OUTPUT_TOKENS = 128_000
 # DeepSeek API: max_tokens must be in [1, 393216].
@@ -209,6 +230,9 @@ _DEEPSEEK_MAX_OUTPUT_TOKENS = 393_216
 _GLOBAL_MAX_OUTPUT_TOKENS = 384_000
 _SENSENOVA_GLM_MAX_OUTPUT_TOKENS = 131_072
 _SENSENOVA_DEFAULT_MAX_OUTPUT_TOKENS = 65_536
+# B.AI (api.b.ai) 网关：deepseek-v4-flash 的 completion 上限（官方路由配 8192）。
+# 超过此值 B.AI 会返回 400，因此单独限流。
+_BAI_MAX_OUTPUT_TOKENS = 8_192
 
 
 def _model_uses_claude_adaptive(model: str) -> bool:
@@ -317,6 +341,10 @@ def _provider_max_output_tokens(settings: AIProviderSettings) -> int:
             cap = _SENSENOVA_GLM_MAX_OUTPUT_TOKENS
         else:
             cap = _SENSENOVA_DEFAULT_MAX_OUTPUT_TOKENS
+    elif _is_bai(settings.base_url):
+        # B.AI deepseek-v4-flash 等模型的 completion 上限很低（官方配 8192）。
+        # 检测 base_url 优先于 _is_deepseek_model，因为走 B.AI 网关时格式随网关。
+        cap = _BAI_MAX_OUTPUT_TOKENS
     elif _is_mimo(settings):
         cap = mimo_max_output_tokens(settings.model)
     else:
@@ -357,6 +385,28 @@ def _resolve_thinking_params(
             return extra_body, _effort or "medium"
         else:
             extra_body = {"thinking": {"type": "disabled"}}
+            return extra_body, None
+
+    if _is_bai(settings.base_url):
+        # B.AI (api.b.ai) 网关代理真实 DeepSeek 推理模型（deepseek-v4-flash 等），
+        # thinking 请求格式用 DeepSeek 原生风格（thinkingFormat=deepseek）：
+        # thinking.type=adaptive + output_config.effort。
+        # B.AI 声明的 reasoningEfforts 只有 low/medium/high（无 max），
+        # 把 "max" 夹到 "high" 以免上游 400。
+        # 注意：检测 base_url 优先于 _is_deepseek_model。
+        _effort = _adaptive_output_effort(_effort)
+        if _effort == "max":
+            _effort = "high"
+        if _thinking:
+            extra_body = {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": _effort},
+            }
+            return extra_body, _effort
+        else:
+            extra_body = {
+                "thinking": {"type": "disabled"},
+            }
             return extra_body, None
 
     if _is_deepseek_native(settings.base_url) or _is_deepseek_model(model):
