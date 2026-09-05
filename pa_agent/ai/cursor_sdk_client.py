@@ -9,11 +9,9 @@ from __future__ import annotations
 import logging
 import os
 import queue
-import secrets
 import sys
 import threading
 import time
-from pathlib import Path
 from typing import Any, Callable
 
 from pa_agent.ai.cursor_connector import resolve_cursor_sdk_model_id
@@ -23,122 +21,6 @@ from pa_agent.config.settings import AIProviderSettings
 logger = logging.getLogger(__name__)
 
 _PATCHED_CURSOR_SDK_BRIDGE = False
-_PATCHED_CURSOR_SDK_AUTH_TOKENS = False
-_PATCHED_CURSOR_SDK_BRIDGE_ARGV = False
-_PATCHED_CURSOR_SDK_POPEN = False
-
-_AUTH_TOKEN_FLAGS = (
-    "--tool-callback-auth-token",
-    "--store-callback-auth-token",
-)
-
-
-def _safe_bridge_auth_token() -> str:
-    """Auth tokens must not start with '-' or the Node bridge argv parser rejects them."""
-    while True:
-        token = secrets.token_urlsafe(32)
-        if token and not token.startswith("-"):
-            return token
-
-
-def _sanitize_bridge_auth_token(token: str | None) -> str:
-    value = (token or "").strip()
-    if not value or value.startswith("-"):
-        return _safe_bridge_auth_token()
-    return value
-
-
-def _sanitize_cursor_bridge_argv(argv: list[str]) -> list[str]:
-    """Ensure callback auth tokens are valid bridge argv values."""
-    out = list(argv)
-    i = 0
-    while i < len(out):
-        if out[i] in _AUTH_TOKEN_FLAGS:
-            if i + 1 >= len(out):
-                out.append(_safe_bridge_auth_token())
-            else:
-                out[i + 1] = _sanitize_bridge_auth_token(out[i + 1])
-            i += 2
-            continue
-        i += 1
-    return out
-
-
-def _default_workspace() -> str:
-    return os.environ.get("PA_AGENT_ROOT") or str(Path(__file__).resolve().parents[2])
-
-
-def _patch_cursor_sdk_bridge_auth_tokens() -> None:
-    """Patch cursor-sdk callback token generation (bridge argv parser bug on Windows)."""
-    global _PATCHED_CURSOR_SDK_AUTH_TOKENS  # noqa: PLW0603
-    if _PATCHED_CURSOR_SDK_AUTH_TOKENS:
-        return
-    try:
-        import cursor_sdk._store_callback as store_cb  # type: ignore
-        import cursor_sdk._tool_callback as tool_cb  # type: ignore
-    except Exception:
-        return
-    tool_cb._new_auth_token = _safe_bridge_auth_token  # type: ignore[attr-defined]
-    store_cb._new_auth_token = _safe_bridge_auth_token  # type: ignore[attr-defined]
-    _PATCHED_CURSOR_SDK_AUTH_TOKENS = True
-
-
-def _patch_cursor_sdk_bridge_argv() -> None:
-    """Sanitize callback auth tokens when building bridge argv."""
-    global _PATCHED_CURSOR_SDK_BRIDGE_ARGV  # noqa: PLW0603
-    if _PATCHED_CURSOR_SDK_BRIDGE_ARGV:
-        return
-    try:
-        import cursor_sdk._store_callback as store_cb  # type: ignore
-        import cursor_sdk._tool_callback as tool_cb  # type: ignore
-    except Exception:
-        return
-
-    _orig_tool = tool_cb.tool_callback_bridge_argv
-    _orig_store = store_cb.store_callback_bridge_argv
-
-    def _tool_argv(endpoint: Any) -> list[str]:
-        return _sanitize_cursor_bridge_argv(_orig_tool(endpoint))
-
-    def _store_argv(endpoint: Any) -> list[str]:
-        return _sanitize_cursor_bridge_argv(_orig_store(endpoint))
-
-    tool_cb.tool_callback_bridge_argv = _tool_argv  # type: ignore[assignment]
-    store_cb.store_callback_bridge_argv = _store_argv  # type: ignore[assignment]
-    _PATCHED_CURSOR_SDK_BRIDGE_ARGV = True
-
-
-def _patch_cursor_sdk_subprocess_popen() -> None:
-    """Last-resort argv sanitization right before bridge subprocess launch."""
-    global _PATCHED_CURSOR_SDK_POPEN  # noqa: PLW0603
-    if _PATCHED_CURSOR_SDK_POPEN:
-        return
-    try:
-        import subprocess
-
-        import cursor_sdk._bridge as bridge_mod  # type: ignore
-    except Exception:
-        return
-
-    _orig_popen = subprocess.Popen
-
-    def _popen(argv: Any, *args: Any, **kwargs: Any) -> Any:
-        if isinstance(argv, (list, tuple)) and argv:
-            cmd0 = os.fspath(argv[0]).replace("\\", "/")
-            if "cursor-sdk-bridge" in cmd0:
-                return _orig_popen(_sanitize_cursor_bridge_argv(list(argv)), *args, **kwargs)
-        return _orig_popen(argv, *args, **kwargs)
-
-    subprocess.Popen = _popen  # type: ignore[misc, assignment]
-    bridge_mod.subprocess.Popen = _popen  # type: ignore[attr-defined]
-    _PATCHED_CURSOR_SDK_POPEN = True
-
-
-def _ensure_cursor_sdk_patches() -> None:
-    _patch_cursor_sdk_bridge_auth_tokens()
-    _patch_cursor_sdk_bridge_argv()
-    _patch_cursor_sdk_subprocess_popen()
-    _patch_cursor_sdk_bridge_windows()
 
 
 def _patch_cursor_sdk_bridge_windows() -> None:
@@ -331,13 +213,13 @@ class CursorSdkClient:
         timeout_s: float = 600.0,
     ) -> AIReply:
         """Stream a Cursor Agent run and surface thinking/content to the GUI."""
-        del reasoning_effort, timeout_s
+        del thinking, reasoning_effort, timeout_s
 
         if cancel_token is not None and cancel_token.is_set():
             raise CancelledError("Request cancelled before API call")
 
-        _ensure_cursor_sdk_patches()
         try:
+            _patch_cursor_sdk_bridge_windows()
             from cursor_sdk import Agent, AgentOptions, CursorClient, LocalAgentOptions  # type: ignore
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
@@ -346,7 +228,7 @@ class CursorSdkClient:
 
         prompt = _messages_to_prompt(messages)
         model_id = resolve_cursor_sdk_model_id(self._settings.model)
-        cwd = _default_workspace()
+        cwd = os.getcwd()
 
         self._log.info("CursorSdkClient.stream_chat: model_id=%s chars=%d", model_id, len(prompt))
 
@@ -390,32 +272,17 @@ class CursorSdkClient:
         if not content and final_text and on_content_token is not None:
             on_content_token(final_text)
 
-        request_id = str(getattr(result, "id", "") or "")
         usage = AIUsage(prompt_tokens=0, cached_prompt_tokens=0, completion_tokens=0, total_tokens=0)
-
-        if thinking:
-            self._log.debug(
-                "CursorSdkClient: thinking=%s requested; SDK AgentOptions has no thinking "
-                "flag — reasoning depends on model stream events (got %d chars)",
-                thinking,
-                len(reasoning_content),
-            )
 
         return AIReply(
             content=final_text,
             reasoning_content=reasoning_content,
             raw={
-                "id": request_id,
                 "status": getattr(result, "status", None),
                 "model": model_id,
-                "content": final_text,
-                "reasoning_content": reasoning_content,
                 "latency_ms": latency_ms,
             },
             usage=usage,
-            request_id=request_id,
+            request_id=str(getattr(result, "id", "") or ""),
             latency_ms=latency_ms,
         )
-
-
-_ensure_cursor_sdk_patches()

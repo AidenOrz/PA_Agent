@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
+import urllib.parse
 
 from pa_agent.data.base import (
     DataSource,
@@ -86,6 +88,13 @@ class TradingViewSource(DataSource):
         self._symbol: str = ""
         self._timeframe: str = ""
         self._exchange: str = ""
+        # Saved original websocket.create_connection while the proxy patch is
+        # active (None when not patched).
+        self._orig_create_connection = None
+        # The patched wrapper we installed (None when not patched).
+        self._patched_create_connection = None
+        # Where the proxy came from: "env" / "registry" / "port-probe".
+        self._proxy_source = ""
         # Mutex: tvDatafeed is NOT thread-safe — its get_hist() creates a
         # WebSocket and stores it on self.ws; concurrent calls clobber the
         # same socket and cause C++ segfaults.
@@ -105,6 +114,7 @@ class TradingViewSource(DataSource):
 
     def connect(self) -> None:
         try:
+            self._patch_ws_proxy()
             from tvDatafeed import TvDatafeed  # type: ignore[import]
             if self._username and self._password:
                 self._tv = TvDatafeed(self._username, self._password)
@@ -127,9 +137,168 @@ class TradingViewSource(DataSource):
 
     def disconnect(self) -> None:
         self._close_tv_socket()
+        self._restore_ws_proxy()
         self._tv = None
         self._connected = False
         logger.info("TradingViewSource disconnected")
+
+    # ── WebSocket proxy patch ─────────────────────────────────────────────────
+
+    def _patch_ws_proxy(self) -> None:
+        """Route tvDatafeed's WebSocket through a local proxy.
+
+        tvDatafeed connects via ``websocket.create_connection()``, which does
+        NOT honor HTTP_PROXY / HTTPS_PROXY env vars by default. On networks
+        where ``data.tradingview.com`` is unreachable directly (e.g. mainland
+        China), the WebSocket must go through a local proxy.
+
+        Proxy detection order:
+          1. HTTPS_PROXY / HTTP_PROXY env vars
+          2. Windows system proxy (Internet Settings registry)
+          3. Common local proxy ports (Clash 7890/10808, V2Ray 1080, …)
+
+        We patch ``tvDatafeed.main.create_connection`` (the module-level name
+        its ``__create_connection`` calls), not the ``websocket`` module
+        attribute — tvDatafeed binds the function at import time.
+        """
+        if self._orig_create_connection is not None:
+            return  # already patched
+        proxy = self._detect_proxy()
+        if proxy is None:
+            logger.info("未检测到可用代理，TradingView 将直连（可能超时）")
+            return
+        proxy_url, host, port, proxy_source = proxy
+        self._proxy_source = proxy_source
+        # Respect NO_PROXY / ProxyOverride: skip patch when the target host
+        # is whitelisted for direct connection.
+        no_proxy = os.environ.get("NO_PROXY", "").lower()
+        if "data.tradingview.com" in no_proxy or "tradingview.com" in no_proxy:
+            logger.info("tradingview.com in NO_PROXY — skip proxy patch")
+            return
+
+        import tvDatafeed.main as tv_main  # type: ignore[import]
+
+        original = tv_main.create_connection
+
+        def _patched(url, timeout=None, class_=None, **options):
+            # tvDatafeed calls create_connection() without class_ — the
+            # original defaults it to websocket.WebSocket. Preserve that.
+            if class_ is None:
+                from websocket import WebSocket as _WebSocketDefault
+
+                class_ = _WebSocketDefault
+            options.setdefault("http_proxy_host", host)
+            options.setdefault("http_proxy_port", port)
+            return original(url, timeout=timeout, class_=class_, **options)
+
+        tv_main.create_connection = _patched
+        self._orig_create_connection = original
+        self._patched_create_connection = _patched
+        logger.info("Patched tvDatafeed WebSocket to use proxy %s (from %s)", proxy_url, self._proxy_source)
+
+    @staticmethod
+    def _detect_proxy() -> tuple[str, str, int, str] | None:
+        """Return (proxy_url, host, port, source) of the best available proxy.
+
+        Order: env vars → Windows system proxy → common local ports.
+        """
+        # 1. Environment variables
+        for key in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+            raw = os.environ.get(key, "").strip()
+            if raw:
+                parsed = urllib.parse.urlparse(raw if "://" in raw else f"http://{raw}")
+                if parsed.hostname:
+                    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                    return raw, parsed.hostname, port, "env"
+
+        # 2. Windows system proxy (registry) — GUI-launched apps inherit this
+        # even when env vars are absent.
+        try:
+            import winreg  # Windows only
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            ) as key:
+                enable_val, _ = winreg.QueryValueEx(key, "ProxyEnable")
+                if enable_val:
+                    server, _ = winreg.QueryValueEx(key, "ProxyServer")
+                    if server:
+                        host, port = TradingViewSource._parse_proxy_server(server)
+                        if host and port:
+                            return f"http://{host}:{port}", host, port, "registry"
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 3. Common local proxy ports (Clash / V2Ray / Shadowsocks)
+        for port in (7890, 10808, 1080, 10809, 7897, 8888, 8080):
+            if TradingViewSource._tcp_open("127.0.0.1", port):
+                return f"http://127.0.0.1:{port}", "127.0.0.1", port, "port-probe"
+
+        return None
+
+    @staticmethod
+    def _parse_proxy_server(server: str) -> tuple[str, int] | None:
+        """Parse a Windows ProxyServer value.
+
+        Accepts ``host:port`` or ``http=host:port;https=host:port`` style.
+        Prefers the https entry (WebSocket is wss://).
+        """
+        text = (server or "").strip()
+        if not text:
+            return None
+        https_part = ""
+        for part in text.split(";"):
+            part = part.strip()
+            if not part:
+                continue
+            if "=" in part:
+                scheme, addr = part.split("=", 1)
+                if scheme.strip().lower() == "https" and addr.strip():
+                    https_part = addr.strip()
+            elif not https_part:
+                https_part = part
+        if not https_part:
+            return None
+        parsed = urllib.parse.urlparse(
+            https_part if "://" in https_part else f"http://{https_part}"
+        )
+        if not parsed.hostname:
+            return None
+        port = parsed.port or 80
+        return parsed.hostname, port
+
+    @staticmethod
+    def _tcp_open(host: str, port: int, timeout: float = 0.5) -> bool:
+        import socket
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            s.connect((host, port))
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+        finally:
+            s.close()
+
+    def _restore_ws_proxy(self) -> None:
+        if self._orig_create_connection is None:
+            return
+        try:
+            import tvDatafeed.main as tv_main  # type: ignore[import]
+
+            if tv_main.create_connection is self._patched_create_connection:
+                # Our wrapper is still installed — safe to restore.
+                tv_main.create_connection = self._orig_create_connection
+                logger.info("Restored tvDatafeed WebSocket connection")
+            else:
+                # Someone else patched over us — don't clobber them, just
+                # drop our saved references.
+                logger.debug("tvDatafeed.create_connection changed by others; skip restore")
+        finally:
+            self._orig_create_connection = None
+            self._patched_create_connection = None
 
     def _close_tv_socket(self) -> None:
         """Close the live tvDatafeed WebSocket, if any.

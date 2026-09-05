@@ -4,10 +4,13 @@ from __future__ import annotations
 import math
 import re
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from pa_agent.data.base import KlineBar
 
 _TIMEFRAME_SECONDS_RE = re.compile(r"^(\d+)([mhdw])$", re.IGNORECASE)
+_CN_TZ = ZoneInfo("Asia/Shanghai")
 
 # Month uses uppercase M in MT5; UI combos use lowercase units only.
 _TIMEFRAME_SECONDS = {
@@ -24,6 +27,10 @@ def timeframe_to_seconds(timeframe: str) -> int | None:
     """Map timeframe string (e.g. ``5m``, ``1h``) to bar duration in seconds."""
     tf = str(timeframe or "").strip()
     if not tf:
+        return None
+    # MT5 and the A-share sources use an uppercase M for a calendar month;
+    # it must never be treated as the case-insensitive spelling of minute.
+    if tf.endswith("M"):
         return None
     if tf in _TIMEFRAME_SECONDS:
         return _TIMEFRAME_SECONDS[tf]
@@ -43,6 +50,17 @@ def timeframe_to_seconds(timeframe: str) -> int | None:
     return None
 
 
+def _calendar_month_close_ms(ts_open_ms: int | float) -> int:
+    """Return the next calendar-month boundary for a monthly bar."""
+    opened = datetime.fromtimestamp(float(ts_open_ms) / 1000.0, tz=_CN_TZ)
+    if opened.month == 12:
+        year, month = opened.year + 1, 1
+    else:
+        year, month = opened.year, opened.month + 1
+    close = datetime(year, month, 1, tzinfo=_CN_TZ)
+    return int(close.timestamp() * 1000)
+
+
 def seconds_until_bar_closes(
     ts_open_ms: int,
     timeframe: str,
@@ -50,6 +68,12 @@ def seconds_until_bar_closes(
     now_ms: int | None = None,
 ) -> int | None:
     """Whole seconds until the bar that opened at ``ts_open_ms`` closes."""
+    tf = str(timeframe or "").strip()
+    if tf == "1M":
+        if now_ms is None:
+            now_ms = int(time.time() * 1000)
+        remaining_ms = _calendar_month_close_ms(ts_open_ms) - int(now_ms)
+        return max(0, int(math.ceil(remaining_ms / 1000)))
     duration_s = timeframe_to_seconds(timeframe)
     if duration_s is None:
         return None
@@ -127,8 +151,9 @@ def is_bar_still_forming(
         return False
     if now_ms is None:
         now_ms = int(time.time() * 1000)
-    tf = str(timeframe or "").strip().lower()
-    if tf == "1d" and _looks_like_ashare_symbol(symbol):
+    tf = str(timeframe or "").strip()
+    tf_lower = tf.lower()
+    if tf_lower == "1d" and _looks_like_ashare_symbol(symbol):
         try:
             from pa_agent.data.akshare_source import _ashare_session_open
 
@@ -137,11 +162,20 @@ def is_bar_still_forming(
         except ImportError:
             pass
     duration_s = timeframe_to_seconds(timeframe)
-    if duration_s is None:
-        return True
     from pa_agent.data.datetime_ts import ts_open_to_ms
 
     ts_open = int(ts_open_to_ms(bar.ts_open))
+    if tf == "1M":
+        close_ms = _calendar_month_close_ms(ts_open)
+        if int(now_ms) >= close_ms:
+            return False
+        # A stale broker clock must not keep a completed monthly bar open.
+        local_ms = int(time.time() * 1000)
+        if local_ms >= close_ms + 6 * 3600 * 1000:
+            return False
+        return True
+    if duration_s is None:
+        return True
     close_ms = ts_open + duration_s * 1000
 
     # Primary check: use the provided now_ms (broker or local time).
@@ -152,7 +186,7 @@ def is_bar_still_forming(
     # ticks during weekend / halt), causing now_ms to lag behind real time.
     # If local wall-clock time is more than duration + 6 h past ts_open,
     # the bar has definitely closed regardless of broker time.
-    if tf in ("1d", "1w"):
+    if tf_lower in ("1d", "1w"):
         local_ms = int(time.time() * 1000)
         # 6 h safety margin covers all known broker UTC offsets (UTC-5 to UTC+5).
         safety_ms = 6 * 3600 * 1000
@@ -207,13 +241,6 @@ def forming_bar_has_closed(
 ) -> bool:
     """True when the waited bar finished (new bar appeared or head is no longer forming)."""
     if not bars_newest_first:
-        # bars 为空 (数据拉取失败): 用时间判断是否已过收盘时间, 避免倒计时走完却不提交
-        if now_ms is None:
-            now_ms = int(time.time() * 1000)
-        duration_s = timeframe_to_seconds(timeframe) if timeframe else None
-        if duration_s is not None:
-            close_ms = int(waited_ts_open) + duration_s * 1000
-            return int(now_ms) >= close_ms
         return False
     if not has_forming_bar_at_head(
         bars_newest_first, timeframe, now_ms=now_ms, symbol=symbol

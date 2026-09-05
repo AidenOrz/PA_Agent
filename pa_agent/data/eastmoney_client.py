@@ -512,12 +512,15 @@ def fetch_index_daily(
     *,
     start_date: str,
     end_date: str,
+    timeframe: str = "1d",
 ) -> list[dict[str, Any]]:
+    """Fetch index bars using the requested daily/weekly/monthly period."""
+    klt = _KLT_MAP.get(timeframe, "101")
     params = {
         "secid": index_secid(symbol),
         "fields1": "f1,f2,f3,f4,f5",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
-        "klt": "101",
+        "klt": klt,
         "fqt": "0",
         "beg": start_date,
         "end": end_date,

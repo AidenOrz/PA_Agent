@@ -349,82 +349,27 @@ def _inject_stage1_missing_tail(text: str) -> str:
     return _balance_json_brackets(tail)
 
 
-def _repair_unclosed_string_before_brace(text: str) -> str:
-    """Close strings broken by a raw newline followed by ``}`` / ``]``.
-
-    Models sometimes omit the closing quote in long ``summary`` / ``reasoning``
-    fields, e.g. ``"summary": "text\\n}\\n  },"`` → insert ``"`` before ``}``.
-    """
-    out: list[str] = []
-    in_string = False
-    escape = False
-    i = 0
-    n = len(text)
-
-    while i < n:
-        ch = text[i]
-        if not in_string:
-            if ch == '"':
-                in_string = True
-            out.append(ch)
-            i += 1
-            continue
-        if escape:
-            escape = False
-            out.append(ch)
-            i += 1
-            continue
-        if ch == "\\":
-            escape = True
-            out.append(ch)
-            i += 1
-            continue
-        if ch == '"':
-            in_string = False
-            out.append(ch)
-            i += 1
-            continue
-        if ch == "\n":
-            j = i + 1
-            while j < n and text[j] in " \t\r":
-                j += 1
-            if j < n and text[j] in "}]":
-                out.append('"')
-                in_string = False
-                continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
-
 def _try_repair_json_syntax(
     text: str,
     stage: Literal["stage1", "stage2"],
     *,
     allow_tail_inject: bool = False,
 ) -> str | None:
-    """Return repaired JSON text when truncation/syntax slip caused parse failure."""
+    """Return repaired JSON text when truncation caused a syntax error, else None."""
     if not text.strip().startswith("{"):
         return None
 
-    bases: list[str] = [text.rstrip()]
+    candidate = text.rstrip()
     if stage == "stage1" and allow_tail_inject:
-        bases.append(_inject_stage1_missing_tail(bases[0]))
-
-    seen: set[str] = set()
-    for base in bases:
-        for variant in (base, _repair_unclosed_string_before_brace(base)):
-            candidate = _balance_json_brackets(variant.rstrip())
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            try:
-                json.loads(candidate)
-            except json.JSONDecodeError:
-                continue
-            if candidate != text.rstrip():
-                return candidate
-    return None
+        candidate = _inject_stage1_missing_tail(candidate)
+    candidate = _balance_json_brackets(candidate)
+    if candidate == text.rstrip():
+        return None
+    try:
+        json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return candidate
 
 
 # ── JsonValidator ─────────────────────────────────────────────────────────────
@@ -552,12 +497,15 @@ class JsonValidator:
                     parse_exc = exc2
             if obj is None and parse_exc is not None:
                 exc = parse_exc
+                # Stage 2: fail fast on syntax errors (no silent truncation repair).
                 allow_inject = (
                     stage == "stage1"
                     and not getattr(self._validation, "disable_truncation_repair", True)
                 )
-                repaired = _try_repair_json_syntax(
-                    stripped, stage, allow_tail_inject=allow_inject
+                repaired = (
+                    _try_repair_json_syntax(stripped, stage, allow_tail_inject=allow_inject)
+                    if stage == "stage1"
+                    else None
                 )
                 if repaired is not None:
                     try:
@@ -587,6 +535,13 @@ class JsonValidator:
                 raw_text=raw_text,
                 message="Top-level JSON value is not an object",
             )
+
+        # Capture the no-order invariant before normalization as well as after
+        # it.  Normalizers may repair unrelated terminal/metric fields; a
+        # repair must never erase evidence of an illegal non-null price.
+        pre_normalization_no_order_err = (
+            self._check_no_order_invariant(obj) if stage == "stage2" else None
+        )
 
         obj = self.normalize_parsed(
             stage,
@@ -675,9 +630,17 @@ class JsonValidator:
                         invalid.append(f"trace_semantic:{msg}")
 
         if stage == "stage2":
+            if pre_normalization_no_order_err:
+                for field in pre_normalization_no_order_err["fields"]:
+                    if field not in invalid:
+                        invalid.append(field)
+                allowed.update(pre_normalization_no_order_err["allowed"])
+
             no_order_err = self._check_no_order_invariant(obj)
             if no_order_err:
-                invalid.extend(no_order_err["fields"])
+                for field in no_order_err["fields"]:
+                    if field not in invalid:
+                        invalid.append(field)
                 allowed.update(no_order_err["allowed"])
 
             breakout_err = self._check_breakout_order_basis(obj)

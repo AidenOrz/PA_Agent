@@ -8,23 +8,40 @@ from typing import Any
 
 from pa_agent.data.ashare_common import (
     PRESET_SYMBOLS as _PRESET_SYMBOLS,
-    ashare_after_close_today as _ashare_after_close_today,
+)
+from pa_agent.data.ashare_common import (
     ashare_head_bar_live as _ashare_head_bar_live,
+)
+from pa_agent.data.ashare_common import (
     ashare_session_open as _ashare_session_open,
+)
+from pa_agent.data.ashare_common import (
     ashare_trading_day as _ashare_trading_day,
+)
+from pa_agent.data.ashare_common import (
     cn_now as _cn_now,
-    ensure_today_closed_daily_bar,
+)
+from pa_agent.data.ashare_common import (
     ensure_today_forming_daily_bar,
-    index_symbol_for_api as _index_symbol_for_api,
     is_index_symbol,
-    merge_ohlcv as _merge_ohlcv,
     normalize_ashare_symbol,
+)
+from pa_agent.data.ashare_common import (
+    index_symbol_for_api as _index_symbol_for_api,
+)
+from pa_agent.data.ashare_common import (
+    merge_ohlcv as _merge_ohlcv,
+)
+from pa_agent.data.ashare_common import (
     resample_rows_to_4h as _resample_rows_to_4h,
+)
+from pa_agent.data.ashare_common import (
     row_time_to_ts_ms as _row_time_to_ts_ms,
+)
+from pa_agent.data.ashare_common import (
     rows_to_kline_bars as _rows_to_kline_bars,
 )
 from pa_agent.data.base import DataSource, DataSourceTransientError, KlineBar
-from pa_agent.data.refresh_policy import snapshot_cache_ttl_s
 from pa_agent.data.eastmoney_baostock import (
     _BaostockSession,
     eastmoney_rolling_cap,
@@ -43,6 +60,7 @@ from pa_agent.data.eastmoney_client import (
     is_transient_http_error,
 )
 from pa_agent.data.kline_adjust import get_kline_adjust
+from pa_agent.data.refresh_policy import snapshot_cache_ttl_s
 
 logger = logging.getLogger(__name__)
 
@@ -216,10 +234,6 @@ class EastMoneySource(DataSource):
         elif _ashare_session_open():
             self._apply_spot_to_forming(rows_asc)
 
-        # 收盘后（15:00之后）若数据源未返回当天日线，用盘口数据补一根已收盘K线
-        if self._timeframe == "1d" and _ashare_after_close_today():
-            self._ensure_today_closed_bar(rows_asc)
-
         rows_newest = list(reversed(rows_asc[-fetch_n:]))
         for i, row in enumerate(rows_newest):
             row["closed"] = not (i == 0 and _ashare_head_bar_live(self._timeframe))
@@ -284,11 +298,21 @@ class EastMoneySource(DataSource):
         adjust = get_kline_adjust()
         if is_index_symbol(symbol):
             end = _cn_now().strftime("%Y%m%d")
-            cal_days = min(max(int(n * 1.45) + 25, 75), 420)
+            if timeframe == "1w":
+                cal_days = min(max(int(n * 8.0) + 35, 90), 5000)
+            elif timeframe == "1M":
+                cal_days = min(max(int(n * 32.0) + 90, 450), 15000)
+            else:
+                cal_days = min(max(int(n * 1.45) + 25, 75), 420)
             start = (_cn_now() - timedelta(days=cal_days)).strftime("%Y%m%d")
             try:
                 idx = _index_symbol_for_api(symbol)
-                raw = fetch_index_daily(idx, start_date=start, end_date=end)
+                raw = fetch_index_daily(
+                    idx,
+                    start_date=start,
+                    end_date=end,
+                    timeframe=timeframe,
+                )
                 return _em_rows_to_bars_asc(raw)[-(n + 5) :]
             except EastMoneyTransientError as exc:
                 raise DataSourceTransientError(str(exc)) from exc
@@ -373,7 +397,7 @@ class EastMoneySource(DataSource):
 
         if daily:
             from pa_agent.data.ashare_common import apply_session_quote_to_forming_row
-            from pa_agent.data.eastmoney_client import fetch_stock_order_book, fetch_spot_price
+            from pa_agent.data.eastmoney_client import fetch_spot_price, fetch_stock_order_book
 
             book = fetch_stock_order_book(self._symbol)
             if book is not None and book.price > 0:
@@ -397,56 +421,9 @@ class EastMoneySource(DataSource):
             apply_session_quote_to_forming_row(last, price=price, daily=True)
             return
 
-        from pa_agent.data.eastmoney_client import fetch_spot_price
-
         price = fetch_spot_price(self._symbol)
         if price is None:
             return
         from pa_agent.data.ashare_common import apply_session_quote_to_forming_row
 
         apply_session_quote_to_forming_row(last, price=price, daily=False)
-
-    def _ensure_today_closed_bar(self, rows_asc: list[dict[str, Any]]) -> None:
-        """收盘后若数据源（Baostock等）未包含当日日线，从东方财富盘口补一根已收盘K线。
-
-        Baostock 数据通常在收盘后有数小时延迟，导致 15:00-18:00 之间
-        分析时最后一根 K 线停在昨天。此方法通过东方财富五档/现价接口获取
-        当日完整 OHLCV 并补充为已收盘 K 线。
-        """
-        from pa_agent.data.ashare_common import bar_trade_date
-
-        if not rows_asc:
-            return
-        today = _cn_now().date()
-        # 如果最后一根 bar 已经是今天的，无需补充
-        if bar_trade_date(int(rows_asc[-1]["ts_open"])) >= today:
-            return
-
-        # 尝试从东方财富盘口获取当日 OHLCV
-        from pa_agent.data.eastmoney_client import fetch_stock_order_book
-
-        book = None
-        if not is_index_symbol(self._symbol):
-            book = fetch_stock_order_book(self._symbol)
-
-        if book is not None and book.price > 0:
-            ensure_today_closed_daily_bar(
-                rows_asc,
-                symbol=self._symbol,
-                session_open=float(book.open) if book.open else 0.0,
-                session_high=float(book.high) if book.high else 0.0,
-                session_low=float(book.low) if book.low else 0.0,
-                session_close=float(book.price),
-                session_volume_lots=float(book.volume) if book.volume else 0.0,
-                session_amount=float(book.amount) if book.amount else 0.0,
-            )
-            return
-
-        # 指数无盘口五档，尝试现价
-        spot = fetch_spot_price(self._symbol)
-        if spot and spot > 0:
-            ensure_today_closed_daily_bar(
-                rows_asc,
-                symbol=self._symbol,
-                session_close=float(spot),
-            )

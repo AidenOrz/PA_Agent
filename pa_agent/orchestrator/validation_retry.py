@@ -7,7 +7,7 @@ from typing import Any, Callable, Literal
 
 from pa_agent.ai.json_validator import Ok, ValidationError, coalesce_model_json_text
 from pa_agent.ai.retry_feedback import build_retry_feedback, parse_previous_for_cheat
-from pa_agent.ai.retry_policy import detect_cheat, extract_feedback_targets, should_retry
+from pa_agent.ai.retry_policy import detect_cheat, should_retry
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,34 @@ class ValidationRetryResult:
     reply: Any
     attempts: int
     cheat_detected: bool = False
+
+
+class ValidationRetryError(RuntimeError):
+    """API failure while requesting a validation retry.
+
+    The exception carries the conversation state that existed at the failed
+    retry boundary so the orchestrator can persist a useful partial record
+    instead of losing the original response and retry feedback.
+    """
+
+    def __init__(
+        self,
+        *,
+        stage: StageName,
+        messages: list[dict[str, Any]],
+        reply: Any,
+        attempts: int,
+        cause: Exception,
+    ) -> None:
+        self.stage = stage
+        self.messages = list(messages)
+        self.reply = reply
+        self.attempts = attempts
+        self.cause = cause
+        self.usage = getattr(cause, "usage", None)
+        super().__init__(
+            f"{stage} validation retry API call failed after {attempts} attempt(s): {cause}"
+        )
 
 
 def append_assistant_turn(
@@ -81,7 +109,6 @@ def validate_with_retry(
     attempt = 0
     previous_raw: str | None = None
     previous_obj: dict[str, Any] | None = None
-    previous_feedback_targets: set[str] = set()
 
     while True:
         content = coalesce_model_json_text(
@@ -97,14 +124,7 @@ def validate_with_retry(
                     previous_obj,
                     **validate_kwargs,
                 )
-                cheats = detect_cheat(
-                    stage,
-                    before_norm,
-                    result.obj,
-                    before_raw=previous_obj,
-                    after_raw=parse_previous_for_cheat(content),
-                    feedback_mentioned=previous_feedback_targets,
-                )
+                cheats = detect_cheat(stage, before_norm, result.obj)
                 if cheats:
                     logger.warning(
                         "%s retry cheat detected after attempt %d: %s",
@@ -162,10 +182,6 @@ def validate_with_retry(
 
         previous_raw = content
         previous_obj = parse_previous_for_cheat(previous_raw)
-        previous_feedback_targets = extract_feedback_targets(
-            err.invalid_fields,
-            err.missing_fields,
-        )
 
         feedback = build_retry_feedback(
             err,
@@ -198,4 +214,22 @@ def validate_with_retry(
             assistant_msg,
             {"role": "user", "content": feedback},
         ]
-        current_reply = call_api(current_messages)
+        try:
+            current_reply = call_api(current_messages)
+        except Exception as exc:  # noqa: BLE001
+            # Preserve the feedback turn and the last valid API reply.  The
+            # orchestrator owns partial persistence and will classify the
+            # underlying exception as network/API/cancelled there.
+            logger.warning(
+                "%s validation retry API call failed on attempt %d: %s",
+                stage,
+                attempt,
+                exc,
+            )
+            raise ValidationRetryError(
+                stage=stage,
+                messages=current_messages,
+                reply=current_reply,
+                attempts=attempt + 1,
+                cause=exc,
+            ) from exc

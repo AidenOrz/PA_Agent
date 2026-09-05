@@ -37,11 +37,10 @@ _KLINE_INDICATOR_NOTE = (
 _LANGUAGE_ZH_RULE = """
 ## 语言要求（阶段一、阶段二均必须遵守）
 
-- **通俗易懂（最重要）**：`reasoning`、`diagnosis_summary`、`next_bar_prediction.reasoning`、`next_cycle_prediction.reasoning`、`key_factors`、`risk_assessment`、`watch_points`、`decision_trace` 的 `question` 与 `reason` 等**面向用户的解释文本，必须通俗易懂**。像给刚入门的新手讲解一样，用日常语言描述市场发生了什么、为什么这样判断、接下来可能怎样。避免堆砌专业术语；用到专业概念时用一句话解释清楚。例如不要写"H2 顺势回撤信号确认"，而写"价格第二次回调后继续上涨，说明多头仍然主导"。
-- **思考过程**：扩展思考、内部推理、以及写入 JSON 的 `reason`、`diagnosis_confidence_reasoning`、`trade_confidence_reasoning`、`estimated_win_rate_reasoning` 等说明，**全程使用简体中文**。禁止用英文写推理段落或中英混杂的长句。
-- **最终输出**：阶段一诊断 JSON、阶段二决策 JSON 中所有面向用户的字符串**一律使用简体中文**，不得出现英文单词。
-- **仅允许英文**：JSON 字段名（schema 键名）、规定的枚举取值（如 `proceed`、`wait`、`bullish`、`bearish`）、K 线序号格式（如 `K1`、`K42-K1`）。**除此之外不得使用任何英文**。
-- **价格行为术语**：优先使用下列简体中文 PA 术语；英文缩写须附带中文解释（如"H2（第二次顺势回调）"），**不得单独使用英文缩写**。
+- **思考过程**：扩展思考、内部推理、以及写入 JSON 的 `reason`、`diagnosis_confidence_reasoning`、`trade_confidence_reasoning`、`estimated_win_rate_reasoning` 等说明，**全程使用简体中文**。禁止用英文写推理段落或中英混杂的长句（常见缩写如 HH、HL、Spike、TR 可保留）。
+- **最终输出**：阶段一诊断 JSON、阶段二决策 JSON 中所有面向用户的字符串（含 `reasoning`、`key_factors`、`risk_assessment`、`watch_points`、`gate_trace`/`decision_trace` 的 `question` 与 `reason` 等）**一律使用简体中文**。
+- **仅允许英文或固定英文枚举**：JSON 字段名（schema 键名）、规定的枚举取值（如 `proceed`、`wait`、`bullish`、`bearish`）、策略文件名、K 线序号格式（如 `K1`、`K42-K1`）。
+- **价格行为术语**：思考与 JSON 说明中优先使用下列简体中文 PA 术语（见下节），避免自造词或仅用英文描述。
 """.strip()
 
 _PA_TERMINOLOGY_ZH = """
@@ -65,7 +64,7 @@ _PA_TERMINOLOGY_ZH = """
 | 被套 | 突破方向上的交易者被迫止损离场 |
 | 磁力位 | 失败信号棒/入场棒极点吸引价格回测 |
 
-英文缩写须加中文解释（不可单独使用英文）：SB/EB→信号棒/入场棒、OB/IB→外包棒/内包棒、H1/H2→第一次/第二次顺势回调、L1/L2→第一次/第二次逆势回调、MTR→主要趋势反转、AIL/AIS→持续看多/持续看空、20GB→约20根K线未触及均线、TR→交易区间、MM→测量移动（等距目标位）、SPS→尖峰顺势突破、SCS→尖峰连续尖峰。
+英文缩写（可保留）：SB/EB、OB/IB、H1/H2、L1/L2、MTR、AIL/AIS、20GB。
 """.strip()
 
 _STAGE2_API_TASK_RULE = """
@@ -274,7 +273,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
   {"node_id": "2.3", "answer": "是", "branch": "bearish", "override_reason": "近3根出现强势看跌反转，斜率窗口未捕捉到该结构突变"}
 ]
 ```
-约束：§1.1/§9.1 为锁定节点不可覆盖；安全闸门（§10.3/§14）只能朝更保守方向；§2.3 answer/branch 须自洽（bullish/bearish↔是，neutral↔中性）；`answer` **禁止**写多头/空头/bullish/bearish，方向只写在 `branch`；不输出时请勿包含该字段。
+约束：§1.1/§9.1 为锁定节点不可覆盖；安全闸门（§10.3/§14）只能朝更保守方向；§2.3 answer/branch 须自洽（bullish/bearish↔是，neutral↔中性）；不输出时请勿包含该字段。
 
 **§2.3 覆盖门槛（三项全部满足才允许提交）：**
 1. 指明具体是哪根 K 线（如 K2、K1）、哪个结构特征（如强势空头趋势棒跌破颈线、MTR 四组件齐全）导致方向突变；
@@ -325,9 +324,7 @@ diagnosis_confidence 分档说明（全系统统一阈值 **50**）:
 - 50-69:周期位置存在歧义(如 trending_tr vs normal_channel),或长程背景与近期方向冲突(冲突不否决、不自动wait,仅降置信);需更多K线确认
 - 30-49:信号严重矛盾,周期位置难以判定,K线特征与多种状态都有部分重叠;阶段二应显著降低 trade_confidence
 - 0-29:数据不足以支撑任何诊断,或市场状态极度混乱(如极端交易区间)
-- **多尺度冲突硬顶**：当程序 `scale_conflict=true` 或 `trend_context.conflict=true` 时，`diagnosis_confidence` **不得超过 55**（程序会封顶）；执行跟近期窗口，长程只作风险参考
 - **<50 且 key_signals 为空**：阶段二强烈倾向 `order_type=不下单`（仍须经 §9–§10 完整评估，不得跳过）
-- 程序 `breakout_quality` / `mm_as_tp_ok` / `spike_aftermath_hint` 为客观辅助：仅 surviving 才主推区间 MM；pullback≠反转；sticky_reversal_risk 仅诊断
 
 **support_levels / resistance_levels 填写规则：**
 - `support_levels`：从近期 K 线结构中识别出的**当前价格下方**支撑价位，按由近到远排列，最多 3 个。每项填价格字符串（如 `"5402"` 或 `"5380-5400"` 表示区间），不识别时填空数组 `[]`。
@@ -479,14 +476,14 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 - `decision_trace[10.3].reason` 中的入场/止损/目标数字必须与 `decision` 三价一致（勿用未写入 decision 的中间价）
 - 做多：风险点数 = entry − stop，回报点数 = take_profit_price − entry；做空：风险 = stop − entry，回报 = entry − take_profit_price
 - 盈亏比 = 回报 ÷ 风险（程序与界面只认此公式；reasoning 中写的 RR 必须与三价一致，否则校验失败）
-- **无盈亏比上限（模型侧）**：按结构自由定 entry / TP1 / TP2 / stop；**禁止**为凑 RR 而缩小 TP1 或贴噪音止损。程序会在 RR>1.0 时自动向外扩 stop（保持 TP1/TP2 不变）。
+- **无盈亏比上限（模型侧）**：按结构自由定 entry / TP1 / TP2 / stop；**禁止**为凑 RR 而缩小 TP1 或贴噪音止损。程序会在 RR>1.5 时自动向外扩 stop（保持 TP1/TP2 不变）。
 - **定价顺序（推荐）**：
   1. 定 **entry**（结构位/边界/回撤位或突破极值±跳动）
   2. 定 **take_profit_price（TP1）** 于最近有效结构目标（通道对边、区间对侧、前 swing 等）
   3. 定 **take_profit_price_2（TP2）** 于更远结构目标（Measured Move、通道对边远端、区间翻测等）
   4. 定 **stop_loss_price** 于结构失效位（信号棒/波段极点外 1 跳等）
-  5. 若按结构 stop 算得 RR = 回报÷风险 **> 1.0**：**保持 TP1/TP2 不变**；程序校验时会自动向外扩 stop（模型也可先自行扩 stop）
-  6. 若结构 stop 已是最宽合理位且 RR 仍 > 1.0：程序会自动扩 stop；只要 §10.3 交易者方程通过即可
+  5. 若按结构 stop 算得 RR = 回报÷风险 **> 1.5**：**保持 TP1/TP2 不变**；程序校验时会自动向外扩 stop（模型也可先自行扩 stop）
+  6. 若结构 stop 已是最宽合理位且 RR 仍 > 1.5：程序会自动扩 stop；只要 §10.3 交易者方程通过即可
   7. 若结构 stop 导致 RR < 1.0：优先**收紧** stop 至更近的结构失效位，或调整 entry；**禁止**向外扩 stop；仍无法 ≥1.0 → reject
 - **TP1 / TP2 硬规则**：
   - 有下单时 `take_profit_price` 与 `take_profit_price_2` **均必填**；不下单时均为 null
@@ -700,13 +697,10 @@ def _build_next_cycle_prediction_instruction(*, enable_next_bar: bool) -> str:
 
 
 _NEXT_CYCLE_PREDICTION_INSTRUCTION = """\
-## 下一个市场周期预测任务（阶段二附加输出·诊断旁注）
-
-**定位**：`next_cycle_prediction` 是**诊断旁注**，不是交易信号。实测方向边缘极薄（约 +1–2pt vs 抛硬币），
-**禁止**用其改写 `decision` / 否决顺 `direction` 的合格方案。交易门控只认阶段一方向、Always In 与硬禁令。
+## 下一个市场周期预测任务（阶段二附加输出，不影响下单决策）
 
 完成 next_bar_prediction 后，必须在阶段二 JSON 顶层追加键 `next_cycle_prediction`，
-表达对当前市场周期结束后、下一个市场周期的**粗粒度**判断：
+表达对当前市场周期结束后、下一个市场周期的预测：
 
 ```json
 "next_cycle_prediction": {
@@ -722,7 +716,7 @@ _NEXT_CYCLE_PREDICTION_INSTRUCTION = """\
     "trading_range": 10,
     "extreme_tr": 4
   },
-  "reasoning": "简体中文。优先用三桶叙述：①延续当前结构 ②转换中/嵌套冲突 ③粘性反转风险。说明为何不是精确点预测。",
+  "reasoning": "简体中文理由，1–1500 字。须引用阶段一周期诊断、K 线结构演变特征，说明各周期概率依据。",
   "unpredictable": false,
   "features_used": ["stage1_diagnosis", "kline_features"]
 }
@@ -737,7 +731,7 @@ spike | micro_channel | tight_channel | normal_channel | broad_channel | trendin
 2. cycle 必须等于 probabilities 中数值最大的键；并列最大时按上方枚举的字面顺序取靠前者
    （即 spike → micro_channel → tight_channel → normal_channel → broad_channel → trending_tr → trading_range → extreme_tr）。
 3. direction 为独立的方向预测（bullish / bearish / neutral），不由 cycle argmax 强制推导；
-   表达的是预测下一个周期时市场整体偏向的方向——**仅供 UI/记录，不驱动下单**。
+   表达的是预测下一个周期时市场整体偏向的方向。
 4. reasoning 长度 1–1500 字，简体中文，仅讨论周期演变依据，不写下单价格、不写止损止盈。
 5. features_used 合法取值封闭列表（只能从下方选对应值，禁止自造字符串）：
    "stage1_diagnosis"、"kline_features"、"analysis_history"、"experience_library"、"stage2_decision"、"previous_prediction_summary"。
@@ -745,7 +739,7 @@ spike | micro_channel | tight_channel | normal_channel | broad_channel | trendin
    "kline_features" / "analysis_history" / "experience_library" / "previous_prediction_summary"。
 6. 数据不足（K 线数 < 8）、或阶段一诊断为 extreme_tr / unknown、或市场极端混乱时：
    设 unpredictable=true，cycle=null，direction=null，probabilities=null，reasoning 写明原因。
-7. 此预测**不**进入交易者方程、**不**改变 decision 中任意字段，仅作辅助参考；程序亦不再用其硬拦单。
+7. 此预测**不**进入交易者方程、**不**改变 decision 中任意字段，仅作辅助参考。
 """.strip()
 
 # txt files merged into each stage prompt (order preserved)
@@ -1908,7 +1902,7 @@ class PromptAssembler:
             "- 若无强信号棒：§9.0=否，**必须** 继续写 **§9.0P** 并尝试背景限价三价。",
             "- §9.0P=是：signal_bar.bar=null、quality=invalid；entry_bar pending；"
             "三价写入 decision，不要只在 watch_points 写触发条件。",
-            "- 定价：先定结构 TP1/TP2，再定结构 stop；RR>1.0 时程序自动向外扩 stop（保持 TP 不变）。",
+            "- 定价：先定结构 TP1/TP2，再定结构 stop；RR>1.5 时程序自动向外扩 stop（保持 TP 不变）。",
         ]
         if near_support is not None:
             lines.append(

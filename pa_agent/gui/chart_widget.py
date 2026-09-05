@@ -152,16 +152,14 @@ class ChartWidget(pg.PlotWidget):
 
     def set_decision(self, decision: dict) -> None:
         """Draw or clear entry/TP/SL lines and direction marker from the AI decision."""
+        self._pending_decision = decision
         order_type = decision.get("order_type", _NO_ORDER_TEXT)
-        overlay_active = bool(decision.get("chart_overlay_active"))
-
-        if order_type == _NO_ORDER_TEXT and not overlay_active:
-            self._pending_decision = None
+        if order_type == _NO_ORDER_TEXT:
             self._overlay.clear_lines(self)
             self._clear_direction_marker()
+            self._pending_decision = None
             return
 
-        self._pending_decision = decision
         entry = decision.get("entry_price")
         tp = decision.get("take_profit_price")
         tp2 = decision.get("take_profit_price_2")
@@ -171,12 +169,7 @@ class ChartWidget(pg.PlotWidget):
             try:
                 tp2_val = float(tp2) if tp2 is not None else None
                 self._overlay.set_lines(
-                    self,
-                    float(entry),
-                    float(tp),
-                    float(sl),
-                    tp2=tp2_val,
-                    continuity=overlay_active,
+                    self, float(entry), float(tp), float(sl), tp2=tp2_val
                 )
             except (TypeError, ValueError):
                 self._overlay.clear_lines(self)
@@ -497,10 +490,7 @@ class ChartWidget(pg.PlotWidget):
         frame = self._latest_frame
         if decision is None or frame is None:
             return
-        if (
-            decision.get("order_type", _NO_ORDER_TEXT) == _NO_ORDER_TEXT
-            and not decision.get("chart_overlay_active")
-        ):
+        if decision.get("order_type", _NO_ORDER_TEXT) == _NO_ORDER_TEXT:
             return
 
         entry = decision.get("entry_price")

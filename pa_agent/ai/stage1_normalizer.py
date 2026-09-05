@@ -36,12 +36,6 @@ _BAR_ROLE_ALIASES: dict[str, str] = {
     "setup": "signal",
     "pullback": "test",
     "retest": "test",
-    "breakout_test": "test",
-    "breakout_pullback": "test",
-    "breakout-test": "test",
-    "breakout_pullback_test": "test",
-    "support": "structure",
-    "resistance": "structure",
     "failure": "trap",
     "failed": "trap",
     "exhaustion": "climax",
@@ -102,8 +96,6 @@ _CONTEXT_EFFECT_ALIASES: dict[str, str] = {
     "strengthens_bear": "strengthens_bear",
     "strengthens_bulls": "strengthens_bull",   # AI typo: extra 's'
     "strengthens_bears": "strengthens_bear",   # AI typo: extra 's'
-    "strengthens_bash": "strengthens_bear",    # AI typo: bash → bear
-    "strengthen_bash": "strengthens_bear",
     "weakens_bull": "weakens_bull",
     "weakens_bear": "weakens_bear",
     "weaken_bull": "weakens_bull",
@@ -120,15 +112,6 @@ _BAR_TYPE_ENUM = frozenset({
     "trend_bull", "trend_bear", "doji", "inside",
     "outside_bull", "outside_bear", "flat", "other",
 })
-_VALID_BAR_ROLES = frozenset({
-    "structure", "signal", "entry", "confirmation", "noise", "trap", "climax", "test",
-})
-
-_VALID_CONTEXT_EFFECTS = frozenset({
-    "strengthens_bull", "weakens_bull", "strengthens_bear", "weakens_bear",
-    "neutral", "transition", "weakened_bull", "weakened_bear",
-})
-
 _BAR_TYPE_ALIASES: dict[str, str] = {
     "ine": "inside",
     "ins": "inside",
@@ -234,40 +217,6 @@ def _normalize_strategy_file_names(files: Any) -> list[str]:
     return out
 
 
-def _normalize_bar_role_value(raw: str) -> str | None:
-    key = raw.strip().lower().replace(" ", "_").replace("-", "_")
-    mapped = _BAR_ROLE_ALIASES.get(key)
-    if mapped:
-        return mapped
-    if key in _VALID_BAR_ROLES:
-        return key
-    if "breakout" in key and ("test" in key or "pullback" in key):
-        return "test"
-    if key.startswith("trend_"):
-        return "structure"
-    return None
-
-
-def _normalize_context_effect_value(raw: str) -> str | None:
-    key = raw.strip().lower().replace(" ", "_").replace("-", "_")
-    mapped = _CONTEXT_EFFECT_ALIASES.get(key)
-    if mapped:
-        return mapped
-    if key in _VALID_CONTEXT_EFFECTS:
-        return key
-    if key.startswith("strengthen"):
-        if "bear" in key or "bash" in key:
-            return "strengthens_bear"
-        if "bull" in key:
-            return "strengthens_bull"
-    if key.startswith("weaken"):
-        if "bear" in key:
-            return "weakens_bear"
-        if "bull" in key:
-            return "weakens_bull"
-    return None
-
-
 def _normalize_bar_by_bar_roles(out: dict[str, Any]) -> None:
     summary = out.get("bar_by_bar_summary")
     if not isinstance(summary, list):
@@ -278,8 +227,9 @@ def _normalize_bar_by_bar_roles(out: dict[str, Any]) -> None:
         role = item.get("role")
         if not isinstance(role, str):
             continue
-        normalized = _normalize_bar_role_value(role)
-        if normalized and normalized != role:
+        key = role.strip().lower()
+        normalized = _BAR_ROLE_ALIASES.get(key)
+        if normalized:
             item["role"] = normalized
             logger.debug("Mapped bar_by_bar_summary role %r -> %s", role, normalized)
 
@@ -294,7 +244,8 @@ def _normalize_bar_by_bar_context_effects(out: dict[str, Any]) -> None:
         effect = item.get("context_effect")
         if not isinstance(effect, str):
             continue
-        normalized = _normalize_context_effect_value(effect)
+        key = effect.strip().lower()
+        normalized = _CONTEXT_EFFECT_ALIASES.get(key)
         if normalized and normalized != effect:
             item["context_effect"] = normalized
             logger.debug(
@@ -302,31 +253,6 @@ def _normalize_bar_by_bar_context_effects(out: dict[str, Any]) -> None:
                 effect,
                 normalized,
             )
-
-
-_VALID_TRAPPED_SIDES = frozenset({"bulls", "bears", "both", "none", "unknown"})
-
-
-def _normalize_bar_by_bar_trapped_side(out: dict[str, Any]) -> None:
-    summary = out.get("bar_by_bar_summary")
-    if not isinstance(summary, list):
-        return
-    for item in summary:
-        if not isinstance(item, dict):
-            continue
-        side = item.get("trapped_side")
-        if side is None or (isinstance(side, str) and not side.strip()):
-            item["trapped_side"] = "none"
-            logger.debug("Mapped bar_by_bar_summary trapped_side null/empty -> none")
-            continue
-        if isinstance(side, str):
-            key = side.strip().lower()
-            if key in _VALID_TRAPPED_SIDES:
-                if key != side:
-                    item["trapped_side"] = key
-            else:
-                item["trapped_side"] = "unknown"
-                logger.debug("Mapped bar_by_bar_summary trapped_side %r -> unknown", side)
 
 
 def _infer_signal_bar_from_summary(summary: object) -> dict[str, Any] | None:
@@ -498,68 +424,6 @@ def _pad_bar_by_bar_summary_to_minimum(
     )
 
 
-# Pattern-name values the model occasionally places in cycle_position instead of
-# detected_patterns.  Each entry maps the invalid cp string →
-#   (pattern_tag_to_rescue, fallback_cycle_position).
-# The fallback is the most natural host structure for that formation.
-_PATTERN_MISPLACED_AS_CYCLE: dict[str, tuple[str, str]] = {
-    "ascending_triangle":   ("ascending_triangle",   "trading_range"),
-    "descending_triangle":  ("descending_triangle",  "trading_range"),
-    "symmetrical_triangle": ("symmetrical_triangle", "trading_range"),
-    "expanding_triangle":   ("expanding_triangle",   "trading_range"),
-    "wedge":                ("wedge",                "broad_channel"),
-    "double_top":           ("double_top_bottom",    "trading_range"),
-    "double_bottom":        ("double_top_bottom",    "trading_range"),
-    "double_top_bottom":    ("double_top_bottom",    "trading_range"),
-    "mtr":                  ("mtr",                  "broad_channel"),
-    "final_flag":           ("final_flag",           "broad_channel"),
-    "breakout_failure":     ("breakout_failure",     "trading_range"),
-    "failed_breakout":      ("breakout_failure",     "trading_range"),
-    "breakout_test":        ("breakout_test",        "trading_range"),
-    "barbwire":             ("barbwire",             "trading_range"),
-}
-
-_VALID_CYCLE_POSITIONS: frozenset[str] = frozenset([
-    "spike", "micro_channel", "tight_channel", "normal_channel", "broad_channel",
-    "trending_tr", "trading_range", "extreme_tr", "unknown",
-])
-
-
-def _rescue_pattern_from_cycle_position(out: dict[str, Any]) -> bool:
-    """Fix the model putting a pattern name (e.g. 'descending_triangle') in cycle_position.
-
-    When detected, the pattern tag is injected into detected_patterns and cycle_position
-    is replaced with the most natural fallback host state.  Returns True if a rescue was
-    performed.
-    """
-    cp = str(out.get("cycle_position", "") or "").strip().lower()
-    if cp in _VALID_CYCLE_POSITIONS:
-        return False  # already valid — nothing to do
-
-    entry = _PATTERN_MISPLACED_AS_CYCLE.get(cp)
-    if entry is None:
-        # Unknown value but not a known pattern name: leave it for the validator to reject.
-        return False
-
-    pattern_tag, fallback_cp = entry
-
-    # Inject the rescued pattern tag into detected_patterns.
-    patterns: list[str] = list(out.get("detected_patterns") or [])
-    if pattern_tag not in patterns:
-        patterns.insert(0, pattern_tag)
-        out["detected_patterns"] = patterns
-
-    logger.warning(
-        "cycle_position %r is a pattern name, not a market state — "
-        "rescued tag %r into detected_patterns and replaced cycle_position with %r",
-        cp,
-        pattern_tag,
-        fallback_cp,
-    )
-    out["cycle_position"] = fallback_cp
-    return True
-
-
 _INCREMENTAL_TRACKED_FIELDS = (
     "cycle_position",
     "alternative_cycle_position",
@@ -665,9 +529,6 @@ def normalize_stage1(
 
     lenient = normalization_mode == "lenient"
 
-    # ── Rescue pattern names misplaced in cycle_position ─────────────────────
-    _rescue_pattern_from_cycle_position(out)
-
     # ── DecisionNodeEngine: fill §1.1/§2.3/§2.4 (before strategy_files routing) ──
     if kline_frame is not None:
         try:
@@ -721,7 +582,6 @@ def normalize_stage1(
     normalize_stage1_traces(out, normalization_mode=normalization_mode)
     _normalize_bar_by_bar_roles(out)
     _normalize_bar_by_bar_context_effects(out)
-    _normalize_bar_by_bar_trapped_side(out)
     _normalize_bar_types(out)
     _normalize_signal_bar_object(out)
     _normalize_signal_bar_quality(out)
@@ -741,57 +601,4 @@ def normalize_stage1(
         except Exception as exc:  # noqa: BLE001
             logger.warning("refresh_stage1_support_resistance failed: %s", exc)
 
-    _apply_empiric_risk_caps(out)
     return out
-
-
-_SCALE_CONFLICT_CONF_CAP = 55
-
-
-def _apply_empiric_risk_caps(out: dict[str, Any]) -> None:
-    """Cap confidence / annotate risks from program empiric features (in-place)."""
-    pf = out.get("program_features") if isinstance(out.get("program_features"), dict) else {}
-    tc = out.get("trend_context") if isinstance(out.get("trend_context"), dict) else {}
-    scale_conflict = bool(pf.get("scale_conflict")) or bool(tc.get("conflict"))
-    spike_hint = str(pf.get("spike_aftermath_hint") or "none")
-    bo_q = str(pf.get("breakout_quality") or "none")
-    mm_ok = bool(pf.get("mm_as_tp_ok"))
-
-    notes: list[str] = []
-    if scale_conflict:
-        try:
-            conf = int(out.get("diagnosis_confidence") or 50)
-        except (TypeError, ValueError):
-            conf = 50
-        if conf > _SCALE_CONFLICT_CONF_CAP:
-            out["diagnosis_confidence"] = _SCALE_CONFLICT_CONF_CAP
-            notes.append(
-                f"多尺度方向冲突：diagnosis_confidence 已封顶 {_SCALE_CONFLICT_CONF_CAP}"
-            )
-        else:
-            notes.append("多尺度方向冲突：执行跟近期窗口，长程仅作风险参考")
-
-    if spike_hint == "sticky_reversal_risk":
-        notes.append("尖峰起点失守且仍在错边（粘性反转风险）—仅诊断，禁止逆势三价")
-        patterns = list(out.get("detected_patterns") or [])
-        if "reversal_attempt" not in patterns:
-            patterns.append("reversal_attempt")
-            out["detected_patterns"] = patterns
-    elif spike_hint == "pullback":
-        notes.append("尖峰后正常回撤≠反转，默认按通道/旗形处理")
-    elif spike_hint == "origin_break_risk":
-        notes.append("尖峰起点受威胁—观察是否站回，勿抢先当反转下单")
-
-    if bo_q in ("wick_probe", "close_breakout", "failed"):
-        notes.append(
-            f"突破质量={bo_q}：不宜把区间高度 MM 当主目标"
-            + ("（非存活突破）" if not mm_ok else "")
-        )
-    elif bo_q == "surviving" and mm_ok:
-        notes.append("存活突破：区间高度 MM 可作 TP2 候选")
-
-    if not notes:
-        return
-    existing = str(out.get("risk_warning") or "").strip()
-    joined = "；".join(notes)
-    out["risk_warning"] = f"{existing}；{joined}" if existing else joined

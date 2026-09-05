@@ -105,10 +105,9 @@ def _start_relay_via_openclaw_gateway(token: str, port: int) -> bool:
 
     node, mjs = cli
     relay_script = _RELAY_SCRIPT.resolve()
-    message = (
-        f'/exec background=true yieldMs=600000 '
-        f'python "{relay_script}" --port {port} --self-test --token {token}'
-    )
+    # Pass the relay credential through the child environment instead of the
+    # gateway message/command line, where it may be persisted in chat history.
+    message = f'/exec background=true yieldMs=600000 python "{relay_script}" --port {port} --self-test'
     params = json.dumps(
         {
             "sessionKey": "agent:main:main",
@@ -116,6 +115,8 @@ def _start_relay_via_openclaw_gateway(token: str, port: int) -> bool:
             "idempotencyKey": str(uuid.uuid4()),
         }
     )
+    env = _openclaw_cli_env()
+    env["PA_AGENT_RELAY_TOKEN"] = token
     try:
         proc = subprocess.run(
             [
@@ -132,7 +133,7 @@ def _start_relay_via_openclaw_gateway(token: str, port: int) -> bool:
                 "--timeout",
                 "30000",
             ],
-            env=_openclaw_cli_env(),
+            env=env,
             capture_output=True,
             text=True,
             timeout=45,

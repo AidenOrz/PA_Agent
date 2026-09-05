@@ -16,6 +16,8 @@ from pa_agent.data.base import (
     KlineBar,
     normalize_kline_bar,
 )
+from pa_agent.data.kline_adjust import get_kline_adjust
+from pa_agent.data.market_defaults import TV_SSE_INDEX_CODES
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,20 @@ def normalize_tushare_symbol(symbol: str) -> str:
 def display_tushare_symbol(ts_code: str) -> str:
     """Return the 6-digit code for combo-box display."""
     return (ts_code or "").strip().upper().split(".", 1)[0]
+
+
+def is_tushare_index(ts_code: str) -> bool:
+    """True for SSE index codes (000300 沪深300, 000905 中证500, ...).
+
+    Tushare marks these with ``asset='I'``; requesting them as equities via
+    ``pro_bar(asset='E')`` returns an empty frame.
+    """
+    digits = (ts_code or "").strip().upper().split(".", 1)[0]
+    if len(digits) != 6 or not digits.isdigit():
+        return False
+    if not digits.startswith("000"):
+        return False
+    return digits in TV_SSE_INDEX_CODES or digits.startswith("0009")
 
 
 def _trade_date_to_ts_ms(value: object) -> int:
@@ -237,6 +253,15 @@ class TushareSource(DataSource):
     def _is_minute_timeframe(self) -> bool:
         return self._timeframe in _MINUTE_FREQ_BY_TIMEFRAME
 
+    def _configured_adjust(self) -> str:
+        """Read the same adjustment preference used by other A-share sources."""
+        if self._settings is not None:
+            general = getattr(self._settings, "general", self._settings)
+            value = str(getattr(general, "kline_adjust", "") or "").strip().lower()
+            if value in {"qfq", "hfq", "none"}:
+                return value
+        return get_kline_adjust()
+
     def _fetch_daily(self, fetch_n: int) -> Any:
         import tushare as ts
 
@@ -244,14 +269,27 @@ class TushareSource(DataSource):
         start_dt = datetime.now(tz=_CN_TZ) - timedelta(days=max(365, int(fetch_n * 2.4)))
         start = start_dt.strftime("%Y%m%d")
         try:
-            df = ts.pro_bar(
-                ts_code=self._symbol,
-                asset="E",
-                adj=os.environ.get("TUSHARE_ADJ", "qfq").strip() or "qfq",
-                freq="D",
-                start_date=start,
-                end_date=end,
-            )
+            if is_tushare_index(self._symbol):
+                # Index feeds ignore adjustment; asset must be 'I' or pro_bar
+                # silently returns an empty frame.
+                df = ts.pro_bar(
+                    ts_code=self._symbol,
+                    asset="I",
+                    adj=None,
+                    freq="D",
+                    start_date=start,
+                    end_date=end,
+                )
+            else:
+                adjust = self._configured_adjust()
+                df = ts.pro_bar(
+                    ts_code=self._symbol,
+                    asset="E",
+                    adj=None if adjust == "none" else adjust,
+                    freq="D",
+                    start_date=start,
+                    end_date=end,
+                )
         except Exception as exc:
             raise DataSourceTransientError(f"Tushare pro_bar 调用失败: {exc}") from exc
         return df

@@ -20,13 +20,20 @@ import json
 import logging
 import math
 import os
+import tempfile
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pa_agent.config.paths import (
+    TRADE_RECORDS_DIR,
+    sanitize_filename_component,
+)
+
 logger = logging.getLogger(__name__)
 
-_TRADE_RECORDS_DIR = Path("trade_records")
+_TRADE_RECORDS_DIR = TRADE_RECORDS_DIR
 
 # Maximum bars to show in the chart image
 _CHART_MAX_BARS = 50
@@ -147,6 +154,51 @@ def _get(d: dict | None, *keys: str, default: Any = "") -> Any:
         if cur is None:
             return default
     return cur if cur is not None else default
+
+
+def _read_csv_rows(csv_path: Path) -> list[dict[str, str]]:
+    """Read existing rows for a schema-preserving CSV rewrite."""
+    if not csv_path.is_file():
+        return []
+    try:
+        with csv_path.open(encoding="utf-8-sig", newline="") as fh:
+            return list(csv.DictReader(fh))
+    except (OSError, UnicodeError, csv.Error):
+        return []
+
+
+def _atomic_write_csv(csv_path: Path, rows: list[dict[str, str]]) -> None:
+    """Rewrite a trade CSV through a same-directory temporary file."""
+    temp_path: Path | None = None
+    open_fd: int | None = None
+    try:
+        open_fd, temp_name = tempfile.mkstemp(
+            prefix=f".{csv_path.name}.",
+            suffix=".tmp",
+            dir=str(csv_path.parent),
+        )
+        temp_path = Path(temp_name)
+        with os.fdopen(open_fd, "w", newline="", encoding="utf-8-sig") as fh:
+            open_fd = None
+            writer = csv.DictWriter(
+                fh,
+                fieldnames=_CSV_FIELDNAMES,
+                extrasaction="ignore",
+            )
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({key: row.get(key, "") for key in _CSV_FIELDNAMES})
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp_path, csv_path)
+        temp_path = None
+    finally:
+        if open_fd is not None:
+            with suppress(OSError):
+                os.close(open_fd)
+        if temp_path is not None:
+            with suppress(OSError):
+                temp_path.unlink(missing_ok=True)
 
 
 # ── Chart rendering ───────────────────────────────────────────────────────────
@@ -482,12 +534,12 @@ def _save_trade_record_impl(
     entry_bar = bar_analysis.get("entry_bar") or {}
     second_entry = bar_analysis.get("second_entry") or {}
     now = datetime.now()
-    ts_str = now.strftime("%Y%m%d_%H%M%S")
+    ts_str = now.strftime("%Y%m%d_%H%M%S_%f")
     record_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
     # ── File paths ────────────────────────────────────────────────────────────
-    safe_symbol = meta_symbol.replace("/", "-").replace("\\", "-")
-    safe_tf = meta_timeframe.replace("/", "-")
+    safe_symbol = sanitize_filename_component(meta_symbol)
+    safe_tf = sanitize_filename_component(meta_timeframe)
     _TRADE_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = _TRADE_RECORDS_DIR / f"{safe_symbol}_{safe_tf}.csv"
     image_filename = f"{safe_symbol}_{safe_tf}_{ts_str}.png"
@@ -526,16 +578,9 @@ def _save_trade_record_impl(
     )
 
     from pa_agent.ai.decision_continuity import (
+        _TRADE_RECORDS_LOCK,
         audit_relation_fields,
         load_last_trade_csv_row,
-    )
-
-    prev_csv_row = load_last_trade_csv_row(meta_symbol, meta_timeframe)
-    audit = audit_relation_fields(
-        prev_csv_row,
-        dec,
-        frame=frame,
-        cooldown_bars=structure_flip_cooldown_bars,
     )
 
     # ── Build CSV row ─────────────────────────────────────────────────────────
@@ -596,31 +641,39 @@ def _save_trade_record_impl(
 
         "decision_trace_summary": trace_summary,
 
-        "prev_plan_relation": audit.get("prev_plan_relation", ""),
-        "prev_plan_invalidated": audit.get("prev_plan_invalidated", ""),
-        "prev_plan_entry": audit.get("prev_plan_entry", ""),
-        "bars_since_prev_plan": audit.get("bars_since_prev_plan", ""),
+        "prev_plan_relation": "",
+        "prev_plan_invalidated": "",
+        "prev_plan_entry": "",
+        "bars_since_prev_plan": "",
 
         "chart_image": image_filename if chart_written else "",
     }
 
-    # ── Write CSV (rewrite with unified header for schema migrations) ─────────
-    existing_rows: list[dict[str, str]] = []
-    if csv_path.exists():
-        try:
-            with open(csv_path, encoding="utf-8-sig", newline="") as f:
-                existing_rows = list(csv.DictReader(f))
-        except OSError:
-            existing_rows = []
-    merged_row = {k: str(row.get(k, "")) for k in _CSV_FIELDNAMES}
-    for k, v in row.items():
-        if k in _CSV_FIELDNAMES:
-            merged_row[k] = "" if v is None else str(v)
-    existing_rows.append(merged_row)
-    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDNAMES, extrasaction="ignore")
-        writer.writeheader()
-        for r in existing_rows:
-            writer.writerow({k: r.get(k, "") for k in _CSV_FIELDNAMES})
+    # ── Read, audit, and rewrite under one process lock ────────────────────────
+    # The audit must use the same snapshot that is read before the new row is
+    # committed; otherwise concurrent callers can both classify against stale
+    # data and one caller can lose the other's row.
+    with _TRADE_RECORDS_LOCK:
+        prev_csv_row = load_last_trade_csv_row(meta_symbol, meta_timeframe)
+        audit = audit_relation_fields(
+            prev_csv_row,
+            dec,
+            frame=frame,
+            cooldown_bars=structure_flip_cooldown_bars,
+        )
+        row.update({
+            "prev_plan_relation": audit.get("prev_plan_relation", ""),
+            "prev_plan_invalidated": audit.get("prev_plan_invalidated", ""),
+            "prev_plan_entry": audit.get("prev_plan_entry", ""),
+            "bars_since_prev_plan": audit.get("bars_since_prev_plan", ""),
+        })
+
+        existing_rows = _read_csv_rows(csv_path)
+        merged_row = {key: str(row.get(key, "")) for key in _CSV_FIELDNAMES}
+        for key, value in row.items():
+            if key in _CSV_FIELDNAMES:
+                merged_row[key] = "" if value is None else str(value)
+        existing_rows.append(merged_row)
+        _atomic_write_csv(csv_path, existing_rows)
 
     logger.info("Trade record appended: %s", csv_path)

@@ -9,6 +9,7 @@ Must be started inside the QClaw gateway process tree (via gateway ``/exec``).
 from __future__ import annotations
 
 import argparse
+import os
 import http.server
 import json
 import logging
@@ -139,7 +140,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="PA Agent QClaw reasoning relay")
     parser.add_argument("--port", type=int, default=19004)
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--token", default="")
+    parser.add_argument("--token", default=os.environ.get("PA_AGENT_RELAY_TOKEN", ""))
     args = parser.parse_args()
 
     port = args.port if args.port > 0 else _find_free_port(19004)

@@ -7,6 +7,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from tests.fixtures.validators import schema_test_validator
+from pa_agent.ai.deepseek_client import CancelledError
 from pa_agent.ai.router import route_strategy_files
 from pa_agent.orchestrator.two_stage import TwoStageOrchestrator
 from pa_agent.util.threading import CancelToken, OrchestratorEvent
@@ -58,3 +59,56 @@ def test_cancel_before_stage2(frame, pending_writer, assembler, exp_reader):
     call_args = pending_writer.save_partial.call_args
     reason = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("reason", "")
     assert reason == "user_cancelled"
+
+
+def test_cancel_during_stage1_stream_saves_partial_response(
+    frame, pending_writer, assembler, exp_reader,
+):
+    cancel_token = CancelToken()
+    client = MagicMock()
+
+    def stream_side_effect(messages, **kwargs):
+        kwargs["on_content_token"]("partial-json")
+        raise CancelledError(
+            "cancelled during stream",
+            content="partial-json",
+            raw={
+                "stage": "stage1",
+                "content": "partial-json",
+                "reasoning_content": "",
+                "cancelled": True,
+            },
+        )
+
+    client.stream_chat.side_effect = stream_side_effect
+    orchestrator = TwoStageOrchestrator(
+        client=client,
+        assembler=assembler,
+        router=route_strategy_files,
+        validator=schema_test_validator(),
+        pending_writer=pending_writer,
+        exp_reader=exp_reader,
+    )
+
+    events: list[OrchestratorEvent] = []
+    record = orchestrator.submit(
+        frame=frame,
+        cancel_token=cancel_token,
+        on_event=events.append,
+    )
+
+    assert OrchestratorEvent.Cancelled in events
+    pending_writer.save_partial.assert_called_once()
+    partial = pending_writer.save_partial.call_args.args[0]
+    assert partial is record
+    assert partial.stage1_response["content"] == "partial-json"
+    assert partial.exception == {
+        "type": "cancelled",
+        "stage": "stage1",
+        "message": "cancelled during stream",
+        "reason": "user_cancelled",
+    }
+    assert partial.stage1_messages[-1] == {
+        "role": "assistant",
+        "content": "partial-json",
+    }

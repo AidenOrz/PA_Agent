@@ -233,7 +233,10 @@ def test_truncated_stage1_after_bar_by_bar_summary_fails_by_default():
     del obj["gate_trace"]
     del obj["gate_result"]
     truncated = json.dumps(obj, ensure_ascii=False)[:-1] + ","
-    result = validator.validate("stage1", truncated)
+    strict_no_repair = JsonValidator(
+        ValidationSettings(disable_truncation_repair=True)
+    )
+    result = strict_no_repair.validate("stage1", truncated)
     assert isinstance(result, ValidationError)
     assert result.category == "a"
 
@@ -246,7 +249,7 @@ def test_truncated_stage1_can_repair_when_lenient_config():
     truncated = json.dumps(obj, ensure_ascii=False)[:-1] + ","
     result = lenient_validator.validate("stage1", truncated)
     assert isinstance(result, Ok), result
-    assert result.obj["gate_result"] == "unknown"
+    assert result.obj["gate_result"] == "proceed"
     assert len(result.obj["gate_trace"]) >= 1
 
 

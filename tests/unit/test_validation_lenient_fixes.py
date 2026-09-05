@@ -58,7 +58,13 @@ def test_lenient_validator_accepts_pending_answer_synonym() -> None:
     obj["decision"]["order_direction"] = None
     obj["decision"]["entry_price"] = None
     obj["decision"]["take_profit_price"] = None
+    obj["decision"]["take_profit_price_2"] = None
     obj["decision"]["stop_loss_price"] = None
+    obj["decision"]["entry_basis_bar"] = None
+    obj["decision"]["entry_basis_extreme"] = None
+    obj["decision"]["entry_rule"] = None
+    obj["decision"]["estimated_win_rate"] = None
+    obj["decision"]["estimated_win_rate_reasoning"] = None
     obj["decision_trace"].append(
         {
             "node_id": "13",

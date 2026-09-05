@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from pa_agent.data.bar_close_wait import (
     current_forming_ts,
@@ -31,6 +33,34 @@ def test_timeframe_to_seconds() -> None:
     assert timeframe_to_seconds("5m") == 300
     assert timeframe_to_seconds("1h") == 3600
     assert timeframe_to_seconds("2h") == 7200
+    assert timeframe_to_seconds("1M") is None
+
+
+def test_monthly_close_uses_next_calendar_month() -> None:
+    cn_tz = ZoneInfo("Asia/Shanghai")
+    opened = datetime(2024, 1, 1, tzinfo=cn_tz)
+    before_close = datetime(2024, 1, 31, 23, 59, 59, tzinfo=cn_tz)
+    assert seconds_until_bar_closes(
+        int(opened.timestamp() * 1000),
+        "1M",
+        now_ms=int(before_close.timestamp() * 1000),
+    ) == 1
+
+
+def test_monthly_close_handles_leap_february() -> None:
+    cn_tz = ZoneInfo("Asia/Shanghai")
+    opened = datetime(2024, 2, 1, tzinfo=cn_tz)
+    at_close = datetime(2024, 3, 1, tzinfo=cn_tz)
+    assert seconds_until_bar_closes(
+        int(opened.timestamp() * 1000),
+        "1M",
+        now_ms=int(at_close.timestamp() * 1000),
+    ) == 0
+    assert not is_bar_still_forming(
+        _bar(int(opened.timestamp() * 1000)),
+        "1M",
+        now_ms=int(at_close.timestamp() * 1000),
+    )
 
 
 def test_seconds_until_bar_closes() -> None:

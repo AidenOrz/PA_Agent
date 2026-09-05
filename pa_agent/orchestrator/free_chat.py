@@ -7,8 +7,8 @@ Design reference: design.md §B.17
 """
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pa_agent.records.pending_writer import PendingWriter
 
 from pa_agent.ai.deepseek_client import AIReply
+from pa_agent.records.pending_writer import build_record_id
 from pa_agent.records.schema import AnalysisRecord, FollowupTurn
 from pa_agent.util.threading import CancelToken
 from pa_agent.util.timefmt import now_local_ms
@@ -27,18 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 def _derive_record_id(record: AnalysisRecord) -> str:
-    """Derive the record basename (without extension) from an AnalysisRecord.
-
-    Uses the same logic as ``_build_basename`` in pending_writer.py.
-    """
-    from datetime import datetime, timezone
-
-    ms = record.meta.timestamp_local_ms
-    dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc).astimezone()
-    ts_str = dt.strftime("%Y-%m-%d_%H-%m-%S")
-    symbol = record.meta.symbol
-    timeframe = record.meta.timeframe
-    return f"{ts_str}_{symbol}_{timeframe}"
+    """Derive the sidecar basename using PendingWriter's canonical helper."""
+    return build_record_id(record)
 
 
 def _strip_reasoning(message: dict) -> dict:

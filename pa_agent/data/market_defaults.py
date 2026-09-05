@@ -101,7 +101,7 @@ def normalize_gold_symbol_for_kind(kind: str, symbol: str) -> str:
     from pa_agent.data.ashare_common import normalize_ashare_symbol
 
     sym = (symbol or "").strip()
-    if kind in ("akshare", "eastmoney", "tushare"):
+    if kind in ("akshare", "eastmoney", "tushare", "westock"):
         code = normalize_ashare_symbol(sym)
         if not code or not _looks_like_ashare_code(code):
             return A_SHARE_DEFAULT_SYMBOL
@@ -276,6 +276,12 @@ def equity_tv_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
             if ex != hint_ex:
                 pairs.append((ex, upper))
         return pairs
+
+    # 6. US/global equity tickers — letter codes like AAPL, TSLA, MSFT, 0700-HK
+    # handled above. Avoid the forex fallback (which would time out on every
+    # OANDA/PEPPERSTONE venue) by probing the major US exchanges first.
+    if re.fullmatch(r"[A-Za-z]{1,5}", upper):
+        return [("NASDAQ", upper), ("NYSE", upper), ("AMEX", upper)]
 
     return []
 

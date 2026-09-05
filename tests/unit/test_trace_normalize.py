@@ -20,18 +20,6 @@ def test_fix_reversed_bar_range() -> None:
     assert fix_bar_range_string("K50-K1") == "K50-K1"
 
 
-def test_normalize_trace_item_maps_zhongli_to_neutral() -> None:
-    item = {
-        "node_id": "2.2",
-        "question": "长程大背景方向与近期方向的关系？",
-        "answer": "中立",
-        "reason": "test",
-        "bar_range": "K40-K1",
-    }
-    normalize_trace_item(item, normalization_mode="strict")
-    assert item["answer"] == "中性"
-
-
 def test_gate_22_conflict_answer_mapped_to_yes() -> None:
     from pa_agent.ai.trace_normalize import normalize_stage1_traces
 
@@ -435,16 +423,6 @@ def test_partial_and_pending_answer_synonyms() -> None:
     }
     normalize_trace_item(item_partial_yes, normalization_mode="lenient")
     assert item_partial_yes["answer"] == "中性"
-
-    item_yes_partial = {
-        "node_id": "6.2",
-        "question": "是否仍在通道内运行？",
-        "answer": "是部分",
-        "reason": "x",
-        "bar_range": "K10-K1",
-    }
-    normalize_trace_item(item_yes_partial, normalization_mode="strict")
-    assert item_yes_partial["answer"] == "中性"
 
     item_channel = {
         "node_id": "4.2",

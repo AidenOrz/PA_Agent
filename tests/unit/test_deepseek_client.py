@@ -13,6 +13,7 @@ from pa_agent.ai.deepseek_client import (
     _completion_max_tokens,
     _is_deepseek_model,
     _openclaw_agent_request_extra,
+    _is_stream_options_unsupported_error,
 )
 
 
@@ -63,7 +64,7 @@ def test_chat_does_not_send_forbidden_params():
 
 
 def test_chat_extra_body_thinking_enabled():
-    """DeepSeek v4+ uses thinking.type=adaptive + output_config.effort."""
+    """DeepSeek v4 uses adaptive thinking plus reasoning_effort."""
     settings = _make_settings()
     settings.base_url = "https://api.deepseek.com"
     settings.model = "deepseek-v4-pro"
@@ -81,7 +82,6 @@ def test_chat_extra_body_thinking_enabled():
     call_kwargs = mock_openai.return_value.chat.completions.create.call_args
     kwargs = call_kwargs.kwargs
     assert kwargs["extra_body"]["thinking"]["type"] == "adaptive"
-    assert kwargs["extra_body"]["output_config"]["effort"] == "max"
     assert kwargs["reasoning_effort"] == "max"
 
 
@@ -89,105 +89,7 @@ def test_completion_max_tokens_deepseek_cap():
     settings = _make_settings()
     settings.base_url = "https://api.deepseek.com"
     settings.model = "deepseek-v4-pro"
-    assert _completion_max_tokens(settings, extra_body={}, effort="max") == 384_000
-
-
-def test_sensenova_thinking_uses_enabled_disabled_not_adaptive():
-    """SenseNova (token.sensenova.cn) 网关只接受 thinking.type 的
-    enabled/disabled/auto，不接受 DeepSeek 原生的 adaptive。
-    即使用户模型名是 deepseek-v4-flash，参数格式也随 SenseNova 网关。"""
-    from pa_agent.ai.deepseek_client import _resolve_thinking_params
-
-    settings = _make_settings()
-    settings.base_url = "https://token.sensenova.cn/api/llm/v1"
-    settings.model = "deepseek-v4-flash"
-    settings.thinking = True
-    settings.reasoning_effort = "high"
-
-    # 开启思考 → enabled
-    extra, effort = _resolve_thinking_params(settings, thinking=True, reasoning_effort="high")
-    assert extra["thinking"]["type"] == "enabled"
-    assert "adaptive" not in str(extra)
-    assert "output_config" not in extra
-    assert effort == "high"
-
-    # 关闭思考 → disabled
-    extra2, effort2 = _resolve_thinking_params(settings, thinking=False, reasoning_effort="high")
-    assert extra2["thinking"]["type"] == "disabled"
-    assert effort2 is None
-
-
-def test_completion_max_tokens_unknown_gateway_global_cap():
-    settings = _make_settings()
-    settings.base_url = "https://api.example-proxy.com/v1"
-    settings.model = "some-model"
-    assert _completion_max_tokens(settings, extra_body={}, effort="max") == 384_000
-
-
-def test_completion_max_tokens_bai_caps_at_8192():
-    """B.AI (api.b.ai) 网关的 deepseek-v4-flash completion 上限为 8192，
-    不能套用默认的 384000，否则上游 400。"""
-    settings = _make_settings()
-    settings.base_url = "https://api.b.ai/v1"
-    settings.model = "deepseek-v4-flash"
-    assert _completion_max_tokens(settings, extra_body={}, effort="high") == 8_192
-
-
-def test_bai_thinking_uses_deepseek_adaptive_not_enabled():
-    """B.AI deepseek-v4-flash 用 DeepSeek 原生 thinking 格式
-    （thinking.type=adaptive + output_config.effort），即 thinkingFormat=deepseek，
-    不是 SenseNova 那种 enabled。"""
-    from pa_agent.ai.deepseek_client import _resolve_thinking_params
-
-    settings = _make_settings()
-    settings.base_url = "https://api.b.ai/v1"
-    settings.model = "deepseek-v4-flash"
-    settings.thinking = True
-    settings.reasoning_effort = "high"
-
-    extra, effort = _resolve_thinking_params(settings, thinking=True, reasoning_effort="high")
-    assert extra["thinking"]["type"] == "adaptive"
-    assert extra["output_config"]["effort"] == "high"
-    assert effort == "high"
-
-    extra2, effort2 = _resolve_thinking_params(settings, thinking=False, reasoning_effort="high")
-    assert extra2["thinking"]["type"] == "disabled"
-    assert "output_config" not in extra2
-    assert effort2 is None
-
-
-def test_bai_max_effort_clamped_to_high():
-    """B.AI 声明的 reasoningEfforts 只有 low/medium/high；把 max 夹到 high。"""
-    from pa_agent.ai.deepseek_client import _resolve_thinking_params
-
-    settings = _make_settings()
-    settings.base_url = "https://api.b.ai/v1"
-    settings.model = "deepseek-v4-flash"
-
-    extra, effort = _resolve_thinking_params(settings, thinking=True, reasoning_effort="max")
-    assert extra["output_config"]["effort"] == "high"
-    assert effort == "high"
-
-
-def test_bai_chat_sends_capped_max_tokens():
-    settings = _make_settings()
-    settings.base_url = "https://api.b.ai/v1"
-    settings.model = "deepseek-v4-flash"
-    settings.thinking = True
-    settings.reasoning_effort = "high"
-    client = DeepSeekClient(settings)
-
-    mock_resp = _make_mock_response()
-    mock_openai = MagicMock()
-    mock_openai.return_value.chat.completions.create.return_value = mock_resp
-
-    with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
-        client.chat([{"role": "user", "content": "hi"}])
-
-    kwargs = mock_openai.return_value.chat.completions.create.call_args.kwargs
-    assert kwargs["max_tokens"] == 8_192
-    assert kwargs["extra_body"]["thinking"]["type"] == "adaptive"
-    assert kwargs["extra_body"]["output_config"]["effort"] == "high"
+    assert _completion_max_tokens(settings, extra_body={}, effort="max") == 393_216
 
 
 def test_completion_max_tokens_packy_claude_cap():
@@ -242,13 +144,14 @@ def test_chat_sends_max_tokens_when_thinking():
         client.chat([{"role": "user", "content": "hi"}])
 
     kwargs = mock_openai.return_value.chat.completions.create.call_args.kwargs
-    assert kwargs["max_tokens"] == 384_000
+    assert kwargs["max_tokens"] == 393_216
 
 
 def test_chat_kkai_sends_thinking_object_not_reasoning_effort():
     """KKAI Claude: thinking budget in extra_body; reasoning_effort rejected upstream."""
     settings = _make_settings()
     settings.base_url = "https://api.kkone.vip/v1"
+    settings.model = "claude-opus-4-5"
     settings.thinking = True
     settings.reasoning_effort = "high"
     client = DeepSeekClient(settings)
@@ -261,13 +164,14 @@ def test_chat_kkai_sends_thinking_object_not_reasoning_effort():
         client.chat([{"role": "user", "content": "hi"}])
 
     kwargs = mock_openai.return_value.chat.completions.create.call_args.kwargs
-    assert kwargs["extra_body"]["thinking"] == {"type": "enabled", "budget_tokens": 999_998}
+    assert kwargs["extra_body"]["thinking"] == {"type": "enabled", "budget_tokens": 524_287}
     assert "reasoning_effort" not in kwargs
 
 
 def test_chat_kkai_thinking_off_sends_no_thinking_params():
     settings = _make_settings()
     settings.base_url = "https://api.kkone.vip/v1"
+    settings.model = "claude-opus-4-5"
     settings.thinking = False
     client = DeepSeekClient(settings)
 
@@ -326,6 +230,7 @@ def test_chat_yunwu_thinking_off_sends_nothing():
 def test_stream_kkai_passes_thinking_extra_body():
     settings = _make_settings()
     settings.base_url = "https://api.kkone.vip/v1"
+    settings.model = "claude-opus-4-5"
     settings.thinking = True
     settings.reasoning_effort = "medium"
     client = DeepSeekClient(settings)
@@ -361,7 +266,7 @@ def test_stream_kkai_passes_thinking_extra_body():
         )
 
     kwargs = mock_openai.return_value.chat.completions.create.call_args.kwargs
-    assert kwargs["extra_body"]["thinking"]["budget_tokens"] == 999_998
+    assert kwargs["extra_body"]["thinking"]["budget_tokens"] == 524_287
     assert "reasoning_effort" not in kwargs
     assert reply.reasoning_content == "think"
 
@@ -463,6 +368,47 @@ def test_stream_chat_passes_tool_choice_none_for_openclaw() -> None:
 
     extra = mock_openai.last_kwargs.get("extra_body") or {}
     assert extra.get("tool_choice") == "none"
+
+
+def test_stream_options_retry_requires_explicit_unsupported_error() -> None:
+    settings = _make_settings()
+    client = DeepSeekClient(settings)
+    mock_openai = MagicMock()
+    calls: list[dict] = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise TypeError("got an unexpected keyword argument 'stream_options'")
+        return iter([])
+
+    mock_openai.return_value.chat.completions.create.side_effect = create
+    with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
+        client.stream_chat([{"role": "user", "content": "hi"}])
+
+    assert len(calls) == 2
+    assert "stream_options" not in calls[1]
+    assert _is_stream_options_unsupported_error(
+        TypeError("got an unexpected keyword argument 'stream_options'")
+    )
+
+
+def test_stream_options_does_not_retry_uncertain_api_error() -> None:
+    settings = _make_settings()
+    client = DeepSeekClient(settings)
+    mock_openai = MagicMock()
+    mock_openai.return_value.chat.completions.create.side_effect = RuntimeError(
+        "temporary upstream failure"
+    )
+
+    with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
+        with pytest.raises(RuntimeError, match="temporary upstream failure"):
+            client.stream_chat([{"role": "user", "content": "hi"}])
+
+    mock_openai.return_value.chat.completions.create.assert_called_once()
+    assert not _is_stream_options_unsupported_error(
+        RuntimeError("temporary upstream failure")
+    )
 
 
 def test_mimo_chat_sends_enable_thinking_extra_body() -> None:

@@ -131,39 +131,6 @@ _NO_ORDER_PRICE_FIELDS = (
     "entry_rule",
 )
 
-_DECISION_SUBFIELD_KEYS: frozenset[str] = frozenset({
-    "order_direction",
-    "order_type",
-    "entry_price",
-    "entry_basis_bar",
-    "entry_basis_extreme",
-    "entry_rule",
-    "take_profit_price",
-    "take_profit_price_2",
-    "stop_loss_price",
-    "reasoning",
-    "diagnosis_confidence",
-    "diagnosis_confidence_reasoning",
-    "trade_confidence",
-    "trade_confidence_reasoning",
-    "estimated_win_rate",
-    "estimated_win_rate_reasoning",
-    "key_factors",
-    "watch_points",
-    "risk_assessment",
-    "invalidation_condition",
-})
-
-# Decision fields models sometimes nest under diagnosis_summary by mistake.
-_DECISION_FIELDS_FROM_DIAG_SUMMARY: tuple[str, ...] = (
-    "estimated_win_rate_reasoning",
-    "estimated_win_rate",
-    "trade_confidence_reasoning",
-    "diagnosis_confidence_reasoning",
-    "diagnosis_confidence",
-    "trade_confidence",
-)
-
 # Valid enum values for features_used in next_bar_prediction / next_cycle_prediction.
 # Must stay in sync with schemas.py _NEXT_BAR_PREDICTION / _NEXT_CYCLE_PREDICTION.
 _VALID_FEATURES_USED = frozenset({
@@ -423,107 +390,11 @@ def _normalize_stage2_enum_aliases(out: dict[str, Any]) -> bool:
             logger.debug("terminal.outcome %r -> %r", raw_outcome, mapped_outcome)
             changed = True
 
-    return changed
+    # Keep this public-ish helper compatible with callers that invoke the
+    # enum pass directly instead of going through normalize_stage2().
+    if _normalize_stage2_bar_analysis_enums(out):
+        changed = True
 
-
-def _order_type_from_decision_scalar(value: str) -> str | None:
-    """Map a scalar decision token (wait/reject/limit/…) to order_type."""
-    token = str(value or "").strip().lower()
-    if not token:
-        return None
-    if token in _ORDER_TYPE_ALIASES:
-        return _ORDER_TYPE_ALIASES[token]
-    normalized = token.replace(" ", "_").replace("-", "_")
-    if normalized in _ORDER_TYPE_ALIASES:
-        return _ORDER_TYPE_ALIASES[normalized]
-    outcome = _TERMINAL_OUTCOME_ALIASES.get(token) or _TERMINAL_OUTCOME_ALIASES.get(
-        normalized
-    )
-    if outcome in ("wait", "reject"):
-        return "不下单"
-    return None
-
-
-def _repair_diagnosis_summary_and_decision(
-    out: dict[str, Any],
-    *,
-    stage1_json: dict[str, Any] | None = None,
-) -> bool:
-    """Hoist misplaced decision fields and ensure diagnosis_summary schema fields."""
-    changed = False
-    decision = out.get("decision")
-    if not isinstance(decision, dict):
-        return False
-    s1 = stage1_json or {}
-    dsum = out.get("diagnosis_summary")
-    if isinstance(dsum, dict):
-        for key in _DECISION_FIELDS_FROM_DIAG_SUMMARY:
-            if key not in dsum:
-                continue
-            val = dsum.get(key)
-            existing = decision.get(key)
-            if existing not in (None, "", []) and key in decision:
-                dsum.pop(key, None)
-                changed = True
-                continue
-            if val in (None, "", []):
-                dsum.pop(key, None)
-                continue
-            decision[key] = val
-            dsum.pop(key, None)
-            logger.debug("Hoisted diagnosis_summary.%s -> decision.%s", key, key)
-            changed = True
-
-        if not str(dsum.get("cycle_position") or "").strip():
-            dsum["cycle_position"] = str(s1.get("cycle_position") or "unknown")
-            changed = True
-        if not str(dsum.get("direction") or "").strip():
-            dsum["direction"] = str(s1.get("direction") or "neutral")
-            changed = True
-        if not isinstance(dsum.get("key_signals"), list):
-            key_signals = dsum.get("key_signals")
-            if not isinstance(key_signals, list):
-                key_signals = list(s1.get("key_signals") or [])
-            dsum["key_signals"] = key_signals
-            changed = True
-    return changed
-
-
-def _unwrap_flat_stage2_decision(out: dict[str, Any]) -> bool:
-    """Repair models that put decision fields at root or use decision=wait string."""
-    changed = False
-    hoisted: dict[str, Any] = {}
-    for key in _DECISION_SUBFIELD_KEYS:
-        if key in out:
-            hoisted[key] = out.pop(key)
-            changed = True
-
-    raw = out.get("decision")
-    if isinstance(raw, str):
-        order_type = _order_type_from_decision_scalar(raw) or "不下单"
-        decision: dict[str, Any] = {"order_type": order_type}
-        decision.update(hoisted)
-        out["decision"] = decision
-        logger.debug(
-            "Unwrapped scalar decision %r -> order_type=%s with %d hoisted fields",
-            raw,
-            order_type,
-            len(hoisted),
-        )
-        return True
-
-    if isinstance(raw, dict):
-        for key, val in hoisted.items():
-            existing = raw.get(key)
-            if key not in raw or existing is None or existing == "" or existing == []:
-                raw[key] = val
-                changed = True
-        return changed
-
-    if hoisted:
-        out["decision"] = hoisted
-        logger.debug("Built decision object from %d hoisted root fields", len(hoisted))
-        return True
     return changed
 
 
@@ -596,28 +467,14 @@ def _ensure_decision_required_fields(
         if "estimated_win_rate" not in decision:
             decision["estimated_win_rate"] = None
             changed = True
-    elif decision.get("estimated_win_rate") is None:
-        decision["estimated_win_rate"] = 50
-        changed = True
-    if decision.get("estimated_win_rate_reasoning") is not None and not isinstance(
-        decision.get("estimated_win_rate_reasoning"), str
-    ):
-        decision["estimated_win_rate_reasoning"] = None
-        changed = True
-    elif "estimated_win_rate_reasoning" not in decision:
-        decision["estimated_win_rate_reasoning"] = (
-            None
-            if decision.get("order_type") == "不下单"
-            else "基于入场/止损/目标三价与结构背景的胜率估算"
-        )
-        changed = True
-    elif (
-        decision.get("order_type") != "不下单"
-        and isinstance(decision.get("estimated_win_rate_reasoning"), str)
-        and not str(decision.get("estimated_win_rate_reasoning")).strip()
-    ):
-        decision["estimated_win_rate_reasoning"] = "基于入场/止损/目标三价与结构背景的胜率估算"
-        changed = True
+        if decision.get("estimated_win_rate_reasoning") is not None and not isinstance(
+            decision.get("estimated_win_rate_reasoning"), str
+        ):
+            decision["estimated_win_rate_reasoning"] = None
+            changed = True
+        elif "estimated_win_rate_reasoning" not in decision:
+            decision["estimated_win_rate_reasoning"] = None
+            changed = True
     terminal = out.get("terminal")
     if isinstance(terminal, dict) and not str(terminal.get("label") or "").strip():
         outcome = str(terminal.get("outcome") or "wait")
@@ -767,25 +624,6 @@ def _coerce_decision_no_order(out: dict[str, Any]) -> bool:
 
     _clear_decision_to_no_order(decision)
     logger.debug("Coerced decision to 不下单 (%s)", ", ".join(triggers))
-    return True
-
-
-def _coerce_breakout_without_basis(out: dict[str, Any]) -> bool:
-    """Breakout orders require entry_basis_*; fall back to limit when missing."""
-    decision = out.get("decision")
-    if not isinstance(decision, dict):
-        return False
-    if decision.get("order_type") != "突破单":
-        return False
-    if decision.get("entry_basis_bar") and decision.get("entry_basis_extreme"):
-        return False
-    decision["order_type"] = "限价单"
-    decision["entry_basis_bar"] = None
-    decision["entry_basis_extreme"] = None
-    decision["entry_rule"] = None
-    logger.debug(
-        "breakout order missing entry_basis_*; coerced to 限价单"
-    )
     return True
 
 
@@ -954,18 +792,6 @@ def _normalize_next_cycle_prediction(
 
     if not isinstance(prediction, dict):
         return
-
-    for alt_key in ("predicted_next_cycle", "next_cycle"):
-        alt_val = prediction.get(alt_key)
-        if alt_val and not prediction.get("cycle"):
-            prediction["cycle"] = str(alt_val).strip().lower()
-    for stray in (
-        "current_cycle",
-        "predicted_next_cycle",
-        "next_cycle",
-        "confidence",
-    ):
-        prediction.pop(stray, None)
 
     # 0. Migrate primary/secondary shorthand → cycle + probabilities
     primary = prediction.pop("primary", None)
@@ -1549,9 +1375,7 @@ def normalize_stage2(
     """Return a copy of *obj* with decision_trace quirks corrected."""
     out = copy.deepcopy(obj)
     frame_max = _max_bar_seq_from_frame(kline_frame)
-    _unwrap_flat_stage2_decision(out)
     _hoist_terminal_from_decision(out)
-    _repair_diagnosis_summary_and_decision(out, stage1_json=stage1_json)
     decision = out.get("decision")
     if isinstance(decision, dict):
         _normalize_order_type_aliases(decision)
@@ -1599,8 +1423,6 @@ def normalize_stage2(
             DecisionNodeEngine.apply_stage2(out, kline_frame, stage1_json)
         except Exception as exc:  # noqa: BLE001
             logger.warning("DecisionNodeEngine.apply_stage2 failed: %s", exc)
-    if _coerce_breakout_without_basis(out):
-        logger.debug("Coerced breakout-without-basis to 限价单 after DecisionNodeEngine")
 
     normalize_stage2_traces(
         out,
@@ -1609,17 +1431,15 @@ def normalize_stage2(
     )
     decision = out.get("decision")
     if isinstance(decision, dict) and decision.get("order_type") == "不下单":
-        # A no-order decision must satisfy the schema "then" branch:
-        # all price fields + direction must be null.
-        for field in _NO_ORDER_PRICE_FIELDS:
-            decision[field] = None
-        decision["estimated_win_rate"] = None
-        # trade_confidence / trade_confidence_reasoning are required (non-nullable)
-        # by schema; AI incorrectly sets them to null when order_type=不下单.
-        # Patch to valid defaults.
+        # Keep invariant-breaking values intact.  JsonValidator must see the
+        # original non-null price/direction fields and reject the response;
+        # clearing them here would turn an illegal model response into Ok.
         if decision.get("trade_confidence") is None:
             decision["trade_confidence"] = 0
-        if not isinstance(decision.get("trade_confidence_reasoning"), str) or not decision["trade_confidence_reasoning"]:
+        if (
+            not isinstance(decision.get("trade_confidence_reasoning"), str)
+            or not decision["trade_confidence_reasoning"]
+        ):
             decision["trade_confidence_reasoning"] = "无入场计划，不存在交易信心"
 
     bar_analysis = out.get("bar_analysis")
@@ -1735,10 +1555,6 @@ def normalize_stage2(
     if isinstance(pred_c, dict):
         _normalize_next_cycle_prediction(pred_c, stage1_json=stage1_json)
 
-    # next_cycle_prediction is diagnostic sidebar only — do NOT hard-block orders.
-    # Empirics: directional edge from cycle forecasts is thin (~1–2pt); hard bans
-    # remain Always-In / direction / climax rules elsewhere.
-
     if kline_frame is not None and stage1_json:
         try:
             from pa_agent.ai.decision_continuity import (
@@ -1755,9 +1571,5 @@ def normalize_stage2(
             out = apply_continuity_guard(out, ctx)
         except Exception as exc:  # noqa: BLE001
             logger.warning("apply_continuity_guard failed: %s", exc)
-
-    decision = out.get("decision")
-    if isinstance(decision, dict):
-        _truncate_decision_reasoning(decision)
 
     return out

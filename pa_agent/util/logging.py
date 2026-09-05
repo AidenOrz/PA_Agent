@@ -47,16 +47,36 @@ _LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 
 _THIRD_PARTY_LOGGERS = ("urllib3", "openai", "httpx")
 
-# tvdatafeed opens a websocket every refresh tick and logs at DEBUG — keep quiet
+# tvdatafeed opens a websocket every refresh tick and logs at DEBUG — keep quiet.
+# NOTE: never put the bare name "root" in this list.  On Python >= 3.9
+# logging.getLogger("root") returns the REAL root logger, so levelling it here
+# would silence the entire application (it silently dropped every INFO record
+# from the file log).  tvDatafeed's direct-to-root chatter is filtered
+# per-record by _RootDirectNoiseFilter instead.
 _QUIET_LOGGER_NAMES = (
     "urllib3",
     "openai",
     "httpx",
     "tvDatafeed",
     "tvDatafeed.main",
-    "root",  # tvdatafeed uses logging.getLogger("root") for websocket
     "websocket",
 )
+
+
+class _RootDirectNoiseFilter(logging.Filter):
+    """Drop sub-WARNING records emitted directly on the root logger.
+
+    tvDatafeed logs websocket traffic via ``logging.getLogger("root")``, which
+    resolves to the real root logger on modern CPython.  Records coming from
+    application loggers keep their own name and are never affected — only
+    records whose name is literally "root" (third-party direct root logging)
+    are filtered below WARNING.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        if record.name == "root":
+            return record.levelno >= logging.WARNING
+        return True
 
 
 def verify_logging_handlers() -> bool:
@@ -112,10 +132,15 @@ def configure_logging(api_key: str = "") -> None:
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
 
+    root_noise_filter = _RootDirectNoiseFilter()
+    for handler in (file_handler, console_handler):
+        handler.addFilter(root_noise_filter)
+
     handlers: list[logging.Handler] = [file_handler, console_handler]
 
     # Configure root logger
     root_logger = logging.getLogger()
+    logging.disable(logging.NOTSET)
     root_logger.setLevel(logging.DEBUG)
     # Remove any previously installed handlers to avoid duplicates on re-call
     for h in list(root_logger.handlers):

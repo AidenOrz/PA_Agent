@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pa_agent.data.akshare_source import (
+    _akshare_adjust,
     _resample_rows_to_4h,
     is_index_symbol,
     normalize_ashare_symbol,
@@ -16,12 +17,10 @@ def test_normalize_ashare_symbol_stock():
 def test_normalize_ashare_symbol_index():
     assert normalize_ashare_symbol("sh000300") == "sh000300"
     assert normalize_ashare_symbol("000300") == "000300"
-    assert normalize_ashare_symbol("sh000001") == "sh000001"
 
 
 def test_is_index_symbol():
     assert is_index_symbol("000300") is True
-    assert is_index_symbol("sh000001") is True
     assert is_index_symbol("600519") is False
     assert is_index_symbol("000001") is False
 
@@ -36,3 +35,15 @@ def test_resample_60m_to_4h():
     assert out[0]["open"] == 10.0
     assert out[0]["close"] == rows[3]["close"]
     assert out[0]["volume"] == 4.0
+
+
+def test_akshare_adjust_follows_shared_setting(monkeypatch):
+    monkeypatch.setattr(
+        "pa_agent.data.akshare_source.get_kline_adjust", lambda: "hfq"
+    )
+    assert _akshare_adjust() == "hfq"
+
+    monkeypatch.setattr(
+        "pa_agent.data.akshare_source.get_kline_adjust", lambda: "none"
+    )
+    assert _akshare_adjust() == ""

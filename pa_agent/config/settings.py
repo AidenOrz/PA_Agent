@@ -1,11 +1,23 @@
 """Pydantic settings models for PA Agent."""
 from __future__ import annotations
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+import base64
+import ctypes
+import json
+import logging
+import os
+import sys
+import tempfile
+from contextlib import suppress
+from pathlib import Path
+from typing import ClassVar, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 DecisionStance = Literal["conservative", "balanced", "aggressive", "extreme_aggressive"]
-DataSourceKind = Literal["mt5", "tradingview", "akshare", "eastmoney", "eastmoney_futures", "tushare"]
+DataSourceKind = Literal[
+    "mt5", "tradingview", "westock", "akshare", "eastmoney", "tushare"
+]
 NormalizationMode = Literal["strict", "lenient"]
 
 
@@ -61,7 +73,7 @@ class GeneralSettings(BaseModel):
 
     analysis_bar_count: int = Field(default=100, ge=2, le=5000)
     refresh_interval_ms: int = 1000
-    context_warning_threshold_pct: float = 99_999_999.0
+    context_warning_threshold_pct: float = 80.0
     last_data_source: DataSourceKind = "mt5"
     #: A-share K-line adjust for East Money / Baostock (qfq=前复权)
     kline_adjust: Literal["qfq", "hfq", "none"] = "qfq"
@@ -99,13 +111,15 @@ class GeneralSettings(BaseModel):
     @classmethod
     def _coerce_legacy_data_source(cls, v: object) -> object:
         if v == "yfinance":
-            return "eastmoney"
+            return "mt5"
         if v in ("adata", "a_share"):
             return "akshare"
         if v == "eastmoney":
             return "eastmoney"
         if v == "tushare":
             return "tushare"
+        if v == "westock":
+            return "westock"
         return v
 
     @field_validator("decision_flow_default_zoom_pct", mode="before")
@@ -174,13 +188,101 @@ def provider_api_key_configured(settings: Settings | None) -> bool:
     return bool((settings.provider.api_key or "").strip())
 
 
-# ── Persistence ───────────────────────────────────────────────────────────────
-import json
-import logging
-import os
-from pathlib import Path
-
 logger = logging.getLogger(__name__)
+
+_DPAPI_PREFIX = "dpapi:"
+
+
+def _dpapi_protect(value: str) -> str | None:
+    """Encrypt a secret for the current Windows user, or return None."""
+    if sys.platform != "win32" or not value:
+        return None
+    from ctypes import wintypes
+
+    class _DataBlob(ctypes.Structure):
+        _fields_: ClassVar[list[tuple[str, object]]] = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_ubyte)),
+        ]
+
+    raw = value.encode("utf-8")
+    input_buf = (ctypes.c_ubyte * len(raw))(*raw)
+    input_blob = _DataBlob(len(raw), input_buf)
+    output_blob = _DataBlob()
+    try:
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+    except OSError:
+        return None
+    ok = crypt32.CryptProtectData(
+        ctypes.byref(input_blob),
+        None,
+        None,
+        None,
+        None,
+        0x1,  # CRYPTPROTECT_UI_FORBIDDEN
+        ctypes.byref(output_blob),
+    )
+    if not ok:
+        return None
+    try:
+        output = ctypes.cast(
+            output_blob.pbData,
+            ctypes.POINTER(ctypes.c_ubyte * output_blob.cbData),
+        )
+        encoded = base64.b64encode(bytes(output.contents)).decode("ascii")
+        return _DPAPI_PREFIX + encoded
+    finally:
+        kernel32.LocalFree(output_blob.pbData)
+
+
+def _dpapi_unprotect(value: str) -> str | None:
+    """Decrypt a value produced by :func:`_dpapi_protect`."""
+    if sys.platform != "win32" or not value.startswith(_DPAPI_PREFIX):
+        return None
+    from ctypes import wintypes
+
+    class _DataBlob(ctypes.Structure):
+        _fields_: ClassVar[list[tuple[str, object]]] = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_ubyte)),
+        ]
+
+    try:
+        raw = base64.b64decode(value[len(_DPAPI_PREFIX) :], validate=True)
+    except (ValueError, TypeError):
+        return None
+    if not raw:
+        return None
+    input_buf = (ctypes.c_ubyte * len(raw))(*raw)
+    input_blob = _DataBlob(len(raw), input_buf)
+    output_blob = _DataBlob()
+    try:
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+    except OSError:
+        return None
+    ok = crypt32.CryptUnprotectData(
+        ctypes.byref(input_blob),
+        None,
+        None,
+        None,
+        None,
+        0x1,  # CRYPTPROTECT_UI_FORBIDDEN
+        ctypes.byref(output_blob),
+    )
+    if not ok:
+        return None
+    try:
+        output = ctypes.cast(
+            output_blob.pbData,
+            ctypes.POINTER(ctypes.c_ubyte * output_blob.cbData),
+        )
+        return bytes(output.contents).decode("utf-8")
+    except (UnicodeDecodeError, ValueError):
+        return None
+    finally:
+        kernel32.LocalFree(output_blob.pbData)
 
 
 def _migrate_legacy_feishu_json(raw: dict, settings_path: Path) -> bool:
@@ -214,7 +316,7 @@ def _migrate_legacy_feishu_json(raw: dict, settings_path: Path) -> bool:
     return migrated
 
 
-def load_settings(path: Path | None = None) -> "Settings":
+def load_settings(path: Path | None = None) -> Settings:
     """Load settings from *path* (default: SETTINGS_JSON_PATH).
 
     Returns default Settings and writes them to disk if the file is absent.
@@ -230,12 +332,26 @@ def load_settings(path: Path | None = None) -> "Settings":
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("settings.json unreadable (%s); using defaults", exc)
+    except (json.JSONDecodeError, OSError, TypeError) as exc:
+        logger.warning(
+            "settings.json unreadable (%s); using defaults without overwriting the file",
+            exc,
+        )
+        return Settings()
+
+    if not isinstance(raw, dict):
+        logger.warning(
+            "settings.json root is not an object; using defaults without overwriting the file"
+        )
         return Settings()
 
     # Migrate legacy field names
     general = raw.get("general", {})
+    if not isinstance(general, dict):
+        logger.warning(
+            "settings.json general section is invalid; using defaults without overwriting the file"
+        )
+        return Settings()
     if "cost_warning_threshold_pct" in general and "context_warning_threshold_pct" not in general:
         general["context_warning_threshold_pct"] = general.pop("cost_warning_threshold_pct")
     general.pop("last_htf_text", None)
@@ -246,15 +362,53 @@ def load_settings(path: Path | None = None) -> "Settings":
         general["analysis_bar_count"] = general.pop("default_bar_count")
     raw["general"] = general
     provider = raw.get("provider", {})
+    if not isinstance(provider, dict):
+        logger.warning(
+            "settings.json provider section is invalid; using defaults without overwriting the file"
+        )
+        return Settings()
     provider.pop("pricing", None)
     raw["provider"] = provider
 
-    # Migrate legacy encrypted key: drop it, api_key already in provider dict
-    raw.setdefault("provider", {}).setdefault("api_key", "")
+    # Decrypt the protected form into memory.  A legacy plaintext key is
+    # accepted only for migration and is removed from the next disk write.
+    plaintext_key = str(provider.get("api_key") or "").strip()
+    encrypted_key = str(provider.get("api_key_encrypted") or "").strip()
+    if not plaintext_key and encrypted_key:
+        decrypted = _dpapi_unprotect(encrypted_key)
+        if decrypted is None:
+            logger.warning(
+                "provider.api_key_encrypted could not be decrypted; API key remains unset"
+            )
+            provider["api_key"] = ""
+        else:
+            provider["api_key"] = decrypted
+    provider.setdefault("api_key", "")
 
     migrated_feishu = _migrate_legacy_feishu_json(raw, path)
-    settings = Settings.model_validate(raw)
-    dirty = migrated_feishu
+    try:
+        settings = Settings.model_validate(raw)
+    except ValidationError as exc:
+        logger.warning(
+            "settings.json schema invalid (%s); using defaults without overwriting the file",
+            exc,
+        )
+        return Settings()
+
+    if plaintext_key:
+        # Migrate an old plaintext setting only when safe storage is
+        # available; never make startup fail merely because this is a
+        # non-Windows environment.
+        if _dpapi_protect(plaintext_key) is not None:
+            dirty = True
+        else:
+            dirty = migrated_feishu
+            logger.warning(
+                "Legacy plaintext provider.api_key was loaded in memory but not rewritten: "
+                "Windows DPAPI is unavailable"
+            )
+    else:
+        dirty = migrated_feishu
     if settings.pushplus.enabled and not settings.pushplus.token.strip():
         if not (os.environ.get("PUSHPLUS_TOKEN") or "").strip():
             settings.pushplus.enabled = False
@@ -268,7 +422,7 @@ def load_settings(path: Path | None = None) -> "Settings":
     return settings
 
 
-def save_settings(settings: "Settings", path: Path | None = None) -> None:
+def save_settings(settings: Settings, path: Path | None = None) -> None:
     """Persist settings to *path* (default: SETTINGS_JSON_PATH)."""
     from pa_agent.config.paths import SETTINGS_JSON_PATH
 
@@ -276,5 +430,42 @@ def save_settings(settings: "Settings", path: Path | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     data = settings.model_dump()
+    provider = data.setdefault("provider", {})
+    api_key = str(provider.get("api_key") or "").strip()
+    if api_key:
+        encrypted = _dpapi_protect(api_key)
+        if encrypted is None:
+            raise RuntimeError(
+                "无法安全保存 provider.api_key：当前系统不支持 Windows DPAPI，"
+                "请改用环境变量配置 API key"
+            )
+        provider["api_key_encrypted"] = encrypted
+        provider["api_key"] = ""
+    else:
+        provider["api_key"] = ""
+        provider.pop("api_key_encrypted", None)
 
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+    temp_path: Path | None = None
+    fd: int | None = None
+    try:
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=str(path.parent),
+        )
+        temp_path = Path(temp_name)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fd = None
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if fd is not None:
+            with suppress(OSError):
+                os.close(fd)
+        if temp_path is not None:
+            with suppress(OSError):
+                temp_path.unlink(missing_ok=True)

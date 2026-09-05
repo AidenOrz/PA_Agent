@@ -16,22 +16,27 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
     """Single probe. Returns (ok, failure_detail, retryable)."""
 
     def _probe() -> None:
-        from tvDatafeed import Interval, TvDatafeed  # type: ignore[import]
+        # Reuse TradingViewSource so its WebSocket proxy patch (see
+        # TradingViewSource._patch_ws_proxy) is applied — a bare TvDatafeed()
+        # would connect directly and time out on networks where
+        # data.tradingview.com is only reachable through a proxy.
+        from pa_agent.data.tradingview import TradingViewSource
 
-        tv = TvDatafeed()
-        df = tv.get_hist(
-            symbol="XAUUSD",
-            exchange="OANDA",
-            interval=Interval.in_1_minute,
-            n_bars=2,
-        )
-        if df is None or getattr(df, "empty", True):
-            raise RuntimeError("TradingView 返回空数据")
+        src = TradingViewSource()
+        src.set_exchange("OANDA")
+        src.subscribe("XAUUSD", "1m")
+        try:
+            src.connect()
+            bars = src.latest_snapshot(2)
+            if not bars:
+                raise RuntimeError("TradingView 返回空数据")
+        finally:
+            src.disconnect()
 
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    fut = pool.submit(_probe)
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_probe)
-            fut.result(timeout=timeout_s)
+        fut.result(timeout=timeout_s)
         return True, None, False
     except concurrent.futures.TimeoutError:
         logger.warning(
@@ -46,6 +51,12 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("TradingView connectivity probe failed: %s", exc)
         return False, str(exc), True
+    finally:
+        # Executor.__exit__ calls shutdown(wait=True), which defeats the
+        # timeout when tvDatafeed is stuck in a socket read.  The probe result
+        # is already invalid after timeout; let that worker unwind in the
+        # background without blocking the GUI thread.
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def check_tradingview_connectivity(

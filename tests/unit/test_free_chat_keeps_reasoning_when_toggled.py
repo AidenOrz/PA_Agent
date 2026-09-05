@@ -100,9 +100,13 @@ class TestFreeChatKeepsReasoningWhenToggled:
         session.send("q2", cancel)
 
         messages: list[dict] = client.stream_chat.call_args_list[1][0][0]
-        assert messages[3]["role"] == "assistant"
-        assert messages[3]["content"] == "reply 1"
-        assert messages[3].get("reasoning_content") == "reasoning 1"
+        # Prefix layout: [system, user-ref, assistant-recall, q1, a1, q2]
+        # prefix[2] is the program-synthesised recall summary (no reasoning_content).
+        assert messages[3]["role"] == "user"
+        assert messages[3]["content"] == "q1"
+        assert messages[4]["role"] == "assistant"
+        assert messages[4]["content"] == "reply 1"
+        assert messages[4].get("reasoning_content") == "reasoning 1"
 
     def test_previous_turns_keep_reasoning_in_api(self):
         """On the second send, the first assistant turn in history_for_api
@@ -119,14 +123,19 @@ class TestFreeChatKeepsReasoningWhenToggled:
         session.send("question 2", cancel)
 
         messages: list[dict] = client.stream_chat.call_args_list[1][0][0]
-        assert len(messages) == 5
-        assert messages[3]["role"] == "assistant"
-        assert messages[3]["content"] == "reply 1"
-        assert messages[3].get("reasoning_content") == "reasoning 1"
+        # [system, user-ref, assistant-recall, q1, a1, q2] — 6 messages.
+        assert len(messages) == 6
+        assert messages[3]["role"] == "user"
+        assert messages[3]["content"] == "question 1"
+        assert messages[4]["role"] == "assistant"
+        assert messages[4]["content"] == "reply 1"
+        assert messages[4].get("reasoning_content") == "reasoning 1"
 
     def test_three_turns_all_assistant_messages_have_reasoning_in_api(self):
-        """After 3 sends with toggle on, every assistant message in every
-        history_for_api call must have reasoning_content."""
+        """After 3 sends with toggle on, every assistant message from real
+        conversation turns in every history_for_api call must have
+        reasoning_content. (prefix[2], the program-synthesised recall
+        summary, is exempt — it never carries reasoning_content.)"""
         client = MagicMock()
         client.stream_chat.side_effect = [
             _make_reply("reply 1", "reasoning 1"),
@@ -142,7 +151,9 @@ class TestFreeChatKeepsReasoningWhenToggled:
 
         for call_args in client.stream_chat.call_args_list:
             messages: list[dict] = call_args[0][0]
-            for msg in messages:
+            # messages[0:3] are the stable prefix; prefix[2] (assistant recall)
+            # intentionally has no reasoning_content, so only check turns.
+            for msg in messages[3:]:
                 if msg.get("role") == "assistant":
                     assert "reasoning_content" in msg, (
                         f"reasoning_content missing from assistant message: {msg}"
@@ -249,5 +260,11 @@ class TestFreeChatKeepsReasoningWhenToggled:
         session.keep_reasoning_in_resend = True
         session.send("q2", cancel)
         msgs_second: list[dict] = client.stream_chat.call_args_list[1][0][0]
-        followup_asst = next(m for m in msgs_second if m.get("role") == "assistant")
+        # Match by content: the first assistant message (prefix[2]) is the
+        # recall summary without reasoning_content.
+        followup_asst = next(
+            m
+            for m in msgs_second
+            if m.get("role") == "assistant" and m.get("content") == "reply 1"
+        )
         assert followup_asst.get("reasoning_content") == "reasoning 1"

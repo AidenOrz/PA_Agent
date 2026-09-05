@@ -97,6 +97,44 @@ def test_latest_snapshot_fetches_daily_bars(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls[1]["adj"] == "qfq"
 
 
+@pytest.mark.parametrize(("adjust", "expected"), [("hfq", "hfq"), ("none", None)])
+def test_latest_snapshot_uses_shared_adjust_setting(
+    monkeypatch: pytest.MonkeyPatch,
+    adjust: str,
+    expected: str | None,
+) -> None:
+    calls: list[dict] = []
+
+    def fake_pro_bar(**kwargs):
+        calls.append(kwargs)
+        return pd.DataFrame(
+            [
+                {
+                    "trade_date": "20240103",
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.5,
+                    "vol": 100,
+                }
+            ]
+        )
+
+    fake_tushare = types.SimpleNamespace(
+        set_token=lambda token: None,
+        pro_bar=fake_pro_bar,
+    )
+    monkeypatch.setitem(sys.modules, "tushare", fake_tushare)
+    monkeypatch.setenv("TUSHARE_TOKEN", "test-token")
+
+    source = TushareSource(settings=Settings(general={"kline_adjust": adjust}))
+    source.connect()
+    source.subscribe("600519", "1d")
+    source.latest_snapshot(1)
+
+    assert calls[0]["adj"] == expected
+
+
 def test_latest_snapshot_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     fetch_count = 0
 

@@ -1,18 +1,11 @@
 """DecisionPanel — trading decision + market diagnosis summary."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+import math
+import re
 from typing import Any
 
-from pa_agent.util.trade_metrics import (
-    compute_risk_reward,
-    format_estimated_win_rate,
-    max_risk_reward_ratio,
-    min_risk_reward_ratio,
-    passes_trader_equation,
-)
-from pa_agent.ai.cycle_enums import format_cycle_position, format_cycle_with_direction, format_trend_label
-
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -22,6 +15,15 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+)
+
+from pa_agent.ai.cycle_enums import format_cycle_position, format_cycle_with_direction
+from pa_agent.util.trade_metrics import (
+    compute_risk_reward,
+    format_estimated_win_rate,
+    max_risk_reward_ratio,
+    min_risk_reward_ratio,
+    passes_trader_equation,
 )
 
 _NO_ORDER = "不下单"
@@ -35,6 +37,9 @@ _REASON_EDIT_CSS = (
 
 _PREDICTION_UNPREDICTABLE_COLOR = "#8b949e"
 _PREDICTION_UNPREDICTABLE_LABEL = "不可预测"
+
+# 以震荡为主的周期类型
+_RANGE_CYCLES = frozenset({"trading_range", "extreme_tr", "trending_tr"})
 
 _MARKET_PHASE_ZH: dict[str, str] = {
     "stable": "稳定",
@@ -53,10 +58,30 @@ def _format_market_phase(raw: str) -> str:
     return _MARKET_PHASE_ZH.get(key, raw or "—")
 
 
+def _infer_trend_label(direction: str, cycle_position: str) -> str:
+    """Map AI direction + cycle to 上涨 / 下跌 / 震荡."""
+    cp = (cycle_position or "").strip().lower()
+    d = (direction or "").strip().lower()
+
+    if cp in _RANGE_CYCLES:
+        return "震荡"
+
+    if d == "bullish":
+        return "上涨"
+    if d == "bearish":
+        return "下跌"
+    if d == "neutral":
+        return "震荡"
+
+    if cp in ("spike", "micro_channel", "tight_channel"):
+        return "趋势运行中"
+    return "—"
+
+
 def _trend_color(label: str) -> str:
-    if label in ("上涨", "震荡偏多"):
+    if label == "上涨":
         return "#3fb950"
-    if label in ("下跌", "震荡偏空"):
+    if label == "下跌":
         return "#f85149"
     if label in ("震荡", "趋势运行中"):
         return "#e6b800"
@@ -81,6 +106,33 @@ def _parse_score_100(value: object) -> int | None:
         return max(0, min(100, int(float(str(value).strip()))))
     except (ValueError, TypeError):
         return None
+
+
+def _parse_price(value: object) -> float | None:
+    """Parse a positive price or range without letting malformed AI text crash UI."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) and parsed > 0 else None
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    match = re.search(r"(\d+(?:\.\d+)?)\s*[-~]\s*(\d+(?:\.\d+)?)", text)
+    if match:
+        lo, hi = float(match.group(1)), float(match.group(2))
+        parsed = (lo + hi) / 2.0
+    else:
+        match = re.search(r"\d+(?:\.\d+)?", text)
+        if match is None:
+            return None
+        parsed = float(match.group(0))
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _format_price(value: object) -> str:
+    parsed = _parse_price(value)
+    return f"{parsed:.5g}" if parsed is not None else "—"
 
 
 def _format_prediction_probs_line(probs: dict) -> str:
@@ -318,7 +370,7 @@ class DecisionPanel(QWidget):
         alt_cycle = src.get("alternative_cycle_position")
         market_phase = str(src.get("market_phase", "") or "")
 
-        trend = format_trend_label(direction, cycle_position)
+        trend = _infer_trend_label(direction, cycle_position)
         trend_color = _trend_color(trend)
         self._trend_label.setText(f"趋势：{trend}")
         self._apply_diag_chip_style(self._trend_label, color=trend_color)
@@ -468,10 +520,10 @@ class DecisionPanel(QWidget):
             )
         else:
             direction = decision.get("order_direction", "—")
-            entry = decision.get("entry_price")
-            tp = decision.get("take_profit_price")
-            tp2 = decision.get("take_profit_price_2")
-            sl = decision.get("stop_loss_price")
+            entry = _parse_price(decision.get("entry_price"))
+            tp = _parse_price(decision.get("take_profit_price"))
+            tp2 = _parse_price(decision.get("take_profit_price_2"))
+            sl = _parse_price(decision.get("stop_loss_price"))
 
             self._conclusion_label.setText(str(order_type))
             color = "#3fb950" if "多" in str(direction) else "#f85149"
@@ -485,13 +537,11 @@ class DecisionPanel(QWidget):
             self._direction_inline_label.setVisible(True)
 
             self._entry_label.setText(
-                f"入场  {entry:.5g}" if entry is not None else "入场  —"
+                f"入场  {_format_price(entry)}"
             )
-            self._tp_label.setText(f"TP1  {tp:.5g}" if tp is not None else "TP1  —")
-            self._tp2_label.setText(
-                f"TP2  {tp2:.5g}" if tp2 is not None else "TP2  —"
-            )
-            self._sl_label.setText(f"止损  {sl:.5g}" if sl is not None else "止损  —")
+            self._tp_label.setText(f"TP1  {_format_price(tp)}")
+            self._tp2_label.setText(f"TP2  {_format_price(tp2)}")
+            self._sl_label.setText(f"止损  {_format_price(sl)}")
             self._trade_prices_row.setVisible(True)
 
             self._conclusion_bar.setVisible(True)

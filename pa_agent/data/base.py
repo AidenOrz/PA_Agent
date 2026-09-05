@@ -125,3 +125,17 @@ class DataSource(ABC):
 
         Raises DataSourceTransientError on recoverable network issues.
         """
+
+    def canonical_symbol(self, symbol: str) -> str:
+        """Canonical form of user *symbol* input for subscription comparison.
+
+        Sources that rewrite input inside ``subscribe`` (e.g. WeStock expands a
+        bare 6-digit code to ``sz002475``) must override this so callers can
+        compare user input with the stored subscription without dead-locking
+        on a permanent mismatch.
+        """
+        return (symbol or "").strip()
+
+    def canonical_timeframe(self, timeframe: str) -> str:
+        """Canonical form of user *timeframe* input for subscription comparison."""
+        return (timeframe or "").strip()

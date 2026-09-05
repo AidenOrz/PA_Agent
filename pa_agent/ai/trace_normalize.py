@@ -147,14 +147,12 @@ _GENERIC_ANSWER: dict[str, str] = {
     "部分符合": "中性",
     "部分是": "中性",
     "部分否": "否",
-    "是部分": "中性",
     "待确认": "等待",
     "待定": "等待",
     "需确认": "等待",
     "尚未确认": "等待",
     "未确认": "等待",
     "不确定": "中性",
-    "中立": "中性",
 }
 
 _BAR_RANGE_ALIASES = frozenset({"全局", "全图", "整体", "全部", "all"})
@@ -517,8 +515,6 @@ def normalize_trace_item(
     normalization_mode: NormalizationMode = "strict",
 ) -> None:
     """Mutate one trace item: answer + bar_range."""
-    if _is_nullish(item.get("node_id")) and not _is_nullish(item.get("node")):
-        item["node_id"] = str(item.get("node", "")).strip()
     _ensure_trace_string_fields(item)
     lenient = normalization_mode == "lenient"
     nid = str(item.get("node_id", "")).strip()
@@ -527,7 +523,7 @@ def normalize_trace_item(
     if nid != str(item.get("node_id", "")).strip():
         item["node_id"] = nid
 
-    if nid == "14" or (nid.startswith("14") and not nid.startswith("14.")):
+    if nid == "14":
         item["node_id"] = "14.1"
         nid = "14.1"
 
@@ -604,9 +600,9 @@ def normalize_trace_list(
         return trace
 
     # Reorder by chapter: AI may output nodes in any order; the correct
-    # canonical order is by node_id prefix (3.x → 4.x → ... → 14).
+    # canonical order is by node_id prefix (1.x → 2.x → 3.x → ... → 14).
     _CHAPTER_ORDER: dict[str, int] = {
-        "3.": 30, "4.": 40, "5.": 50, "6.": 60,
+        "1.": 10, "2.": 20, "3.": 30, "4.": 40, "5.": 50, "6.": 60,
         "7.": 70, "8.": 80, "9.": 90, "10.": 100,
         "11.": 110, "12.": 120, "13.": 130, "14": 140,
     }
@@ -782,7 +778,7 @@ def _repair_gate_result(obj: dict[str, Any]) -> None:
 
     Per prompt rules, gate_result=wait/unknown is only valid for:
     - §1.2 answer≠是 (cannot identify cycle)
-    - §1.3 answer=是 (market is extremely chaotic)
+    - §1.3 answer=否 (extreme chaos, extreme_tr)
 
     If neither condition holds but gate_result is wait/unknown, force to proceed.
     """
@@ -802,7 +798,7 @@ def _repair_gate_result(obj: dict[str, Any]) -> None:
     node_13_block = any(
         isinstance(item, dict)
         and str(item.get("node_id", "")) == "1.3"
-        and str(item.get("answer", "")).strip() == "是"
+        and str(item.get("answer", "")).strip() == "否"
         for item in gate
     )
     if not node_12_block and not node_13_block:

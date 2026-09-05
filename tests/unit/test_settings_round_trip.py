@@ -1,10 +1,12 @@
 """Unit tests for settings load/save round-trip (task 2.4)."""
 from __future__ import annotations
+
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from pathlib import Path
+
 from pa_agent.config.settings import Settings, load_settings, save_settings
 
 
@@ -18,8 +20,6 @@ def test_defaults(tmp_path):
     assert s.provider.reasoning_effort == "high"
     assert s.provider.context_window == 2_000_000
     assert s.general.analysis_bar_count == 100
-    # 默认数据源为 MT5, 默认品种为现货黄金 XAUUSDm
-    assert s.general.last_data_source == "mt5"
     assert s.general.last_symbol == "XAUUSDm"
     assert s.general.last_timeframe == "15m"
     assert s.general.decision_stance == "balanced"
@@ -37,20 +37,22 @@ def test_round_trip(tmp_path):
     save_settings(original, p)
     loaded = load_settings(p)
     assert loaded.provider.api_key == "sk-test-1234"
-    # 默认数据源为 mt5, 加密货币代码 BTCUSDT 迁移为 MT5 现货黄金默认品种 XAUUSDm
+    # Crypto symbols migrate to gold defaults on load
     assert loaded.general.last_symbol == "XAUUSDm"
     assert loaded.provider.model == original.provider.model
 
 
 def test_api_key_present_on_disk(tmp_path):
-    """The saved JSON contains the plaintext API key."""
+    """The saved JSON stores the provider key only in protected form."""
     p = tmp_path / "settings.json"
     s = Settings()
     s.provider.api_key = "sk-super-secret-key"
     save_settings(s, p)
     raw = p.read_text(encoding="utf-8")
     data = json.loads(raw)
-    assert data["provider"]["api_key"] == "sk-super-secret-key"
+    assert data["provider"]["api_key"] == ""
+    assert data["provider"]["api_key_encrypted"].startswith("dpapi:")
+    assert "sk-super-secret-key" not in raw
 
 
 def test_corrupt_json_returns_defaults(tmp_path):

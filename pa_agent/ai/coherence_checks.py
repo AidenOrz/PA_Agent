@@ -495,19 +495,29 @@ def validate_bar_by_bar_vs_features(
         if not declared or not computed or declared == computed:
             continue
 
-        # AI bar_type and program bar_type are overlapping classifications,
-        # not mutually exclusive. Only flag genuine bull/bear contradictions.
+        # Lenient mode keeps the geometry as advisory context.  Strict mode
+        # enforces objective structural facts while still tolerating threshold
+        # sensitive doji/trend labels near their classification cutoffs.
+        if not strict:
+            continue
+
         _ALL_BAR_TYPES = _STRUCTURAL_TYPES | _THRESHOLD_SENSITIVE_TYPES
         if declared in _ALL_BAR_TYPES and computed in _ALL_BAR_TYPES:
-            _opposites = (
-                ("trend_bull", "trend_bear"),
-                ("outside_bull", "outside_bear"),
+            if (declared, computed) in _COMPATIBLE_PAIRS:
+                continue
+
+            # ``inside`` is a range-structure fact and cannot be relabelled as
+            # a directional trend.  The same applies to opposite outside bars.
+            structural_conflict = (
+                declared in _STRUCTURAL_TYPES or computed in _STRUCTURAL_TYPES
             )
-            if (declared, computed) in _opposites or (computed, declared) in _opposites:
-                errors.append(
-                    f"bar_by_bar_summary[{i}].bar_type={declared!r} contradicts "
-                    f"program feature K{seq} bar_type={computed!r}"
-                )
+            if not structural_conflict and _near_threshold(seq):
+                continue
+
+            errors.append(
+                f"bar_by_bar_summary[{i}].bar_type={declared!r} contradicts "
+                f"program feature K{seq} bar_type={computed!r}"
+            )
             continue
     return errors
 
