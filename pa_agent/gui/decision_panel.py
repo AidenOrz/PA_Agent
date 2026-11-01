@@ -493,8 +493,12 @@ class DecisionPanel(QWidget):
             except (ValueError, TypeError):
                 conf_val = -1
             if conf_val < confidence_threshold:
+                # Explain the downgrade instead of showing a plan that suddenly
+                # says 不下单 while its reasoning still describes the entry.
                 order_type = _NO_ORDER
-                prefix = "有入场机会，但置信度未通过"
+                prefix = (
+                    f"有入场机会，但置信度 {conf_val} 低于阈值 {confidence_threshold}，本次按观望显示。"
+                )
                 reasoning = f"{prefix}\n\n{reasoning}" if reasoning else prefix
         diag_conf = decision.get("diagnosis_confidence", None)
         diag_conf_reasoning = decision.get("diagnosis_confidence_reasoning", None)
