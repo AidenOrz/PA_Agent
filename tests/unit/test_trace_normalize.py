@@ -221,8 +221,14 @@ def test_validator_accepts_user_trending_tr_trace() -> None:
                 "order_type": "不下单",
                 "order_direction": None,
                 "entry_price": None,
+                "entry_basis_bar": None,
+                "entry_basis_extreme": None,
+                "entry_rule": None,
                 "take_profit_price": None,
+                "take_profit_price_2": None,
                 "stop_loss_price": None,
+                "estimated_win_rate": None,
+                "invalidation_condition": None,
             },
             "decision_trace": [
                 {
@@ -306,8 +312,14 @@ def test_validator_accepts_user_payload_with_null_bar_ranges() -> None:
                 "order_type": "不下单",
                 "order_direction": None,
                 "entry_price": None,
+                "entry_basis_bar": None,
+                "entry_basis_extreme": None,
+                "entry_rule": None,
                 "take_profit_price": None,
+                "take_profit_price_2": None,
                 "stop_loss_price": None,
+                "estimated_win_rate": None,
+                "invalidation_condition": None,
             },
             "decision_trace": [
                 {
@@ -355,8 +367,14 @@ def test_validator_accepts_normalized_user_stage2_snippet() -> None:
                 "order_type": "不下单",
                 "order_direction": None,
                 "entry_price": None,
+                "entry_basis_bar": None,
+                "entry_basis_extreme": None,
+                "entry_rule": None,
                 "take_profit_price": None,
+                "take_profit_price_2": None,
                 "stop_loss_price": None,
+                "estimated_win_rate": None,
+                "invalidation_condition": None,
             },
             "decision_trace": [
                 {
@@ -455,8 +473,14 @@ def test_validator_accepts_partial_and_pending_answers() -> None:
                 "order_type": "不下单",
                 "order_direction": None,
                 "entry_price": None,
+                "entry_basis_bar": None,
+                "entry_basis_extreme": None,
+                "entry_rule": None,
                 "take_profit_price": None,
+                "take_profit_price_2": None,
                 "stop_loss_price": None,
+                "estimated_win_rate": None,
+                "invalidation_condition": None,
             },
             "decision_trace": [
                 {
@@ -497,8 +521,14 @@ def test_validator_accepts_stage2_with_null_bar_range_and_forbid_phrase() -> Non
                 "order_type": "不下单",
                 "order_direction": None,
                 "entry_price": None,
+                "entry_basis_bar": None,
+                "entry_basis_extreme": None,
+                "entry_rule": None,
                 "take_profit_price": None,
+                "take_profit_price_2": None,
                 "stop_loss_price": None,
+                "estimated_win_rate": None,
+                "invalidation_condition": None,
             },
             "decision_trace": [
                 {

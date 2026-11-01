@@ -287,7 +287,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 
 规则：
 - answer 只能是：是 / 否 / 中性 / 等待 / 不适用（**禁止**写「部分」「待确认」「待定」等——部分一致用 **中性**，尚需下一根K线确认用 **等待**）
-- **gate_result=wait/unknown 的合法触发条件只有两个：§1.2 answer≠是（无法识别周期）或 §1.3 answer=否（极端混乱 extreme_tr）。** §2.1/§2.5 答「否」或「中性」、§2.3 中性、方向不明等**均不得**设 gate_result=wait——须 proceed 并在阶段二提高门槛或 wait 下单。
+- **gate_result=wait/unknown 的合法触发条件只有两个：§1.2 answer≠是（无法识别周期）或 §1.3 answer=是（极端混乱 extreme_tr）。** §1.3 的问题是「当前市场是否极端混乱？」，答「是」才代表极端混乱、才阻断闸门；答「否」表示并不混乱，**不得**据此设 gate_result=wait。 §2.1/§2.5 答「否」或「中性」、§2.3 中性、方向不明等**均不得**设 gate_result=wait——须 proceed 并在阶段二提高门槛或 wait 下单。
 - §6/§9/§10 等阶段二节点的"否"答案不代表阶段一闸门阻断。
 - gate_result=proceed 表示可通过闸门进入阶段二；wait/unknown 表示不应进入策略与下单评估（仅 §1.2/§1.3 可触发）
 - gate_trace 与 cycle_position、direction 不得矛盾
