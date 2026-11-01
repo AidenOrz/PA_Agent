@@ -132,7 +132,11 @@ class PendingWriter:
             fallback="unknown-record",
         )
         path = self._path_for_filename(f"{safe_record_id}.followups.jsonl")
-        line = json.dumps(turn.model_dump(), ensure_ascii=False)
+        # Follow-up turns carry the user question and the model answer verbatim;
+        # they take the same masking path as full/partial records so a key pasted
+        # into the chat box never lands on disk in plaintext.
+        payload = self._sanitize(turn.model_dump(), self._api_key)
+        line = json.dumps(payload, ensure_ascii=False)
         try:
             with _FOLLOWUP_WRITE_LOCK, path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
@@ -165,6 +169,15 @@ class PendingWriter:
             return node
 
         return _walk(data)
+
+    def set_api_key(self, api_key: str) -> None:
+        """Replace the key used for on-disk masking.
+
+        ``AppContext.bootstrap`` creates this writer with the key that was live
+        at startup; when the user edits the key later the writer must follow,
+        otherwise the new key is written to pending records in plaintext.
+        """
+        self._api_key = api_key or ""
 
     def _write_json(self, path: Path, data: dict) -> None:
         """Atomically write *data* as pretty-printed JSON to *path*."""

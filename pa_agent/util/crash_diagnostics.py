@@ -13,6 +13,32 @@ logger = logging.getLogger(__name__)
 _crash_file = None
 _enabled = False
 
+# faulthandler writes straight to the file descriptor, so MaskingFormatter never
+# sees it.  Keep the file bounded and scrub secrets from the previous run before
+# appending new dumps.
+_CRASH_LOG_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _scrub_crash_log() -> None:
+    """Mask known secrets in an existing crash.log (previous run leftovers)."""
+    try:
+        if not CRASH_LOG_PATH.exists():
+            return
+        size = CRASH_LOG_PATH.stat().st_size
+        if size > _CRASH_LOG_MAX_BYTES:
+            CRASH_LOG_PATH.replace(CRASH_LOG_PATH.with_suffix(".log.1"))
+            return
+        if size == 0:
+            return
+        from pa_agent.util.logging import mask_known_secrets_in_text
+
+        original = CRASH_LOG_PATH.read_text(encoding="utf-8", errors="replace")
+        scrubbed = mask_known_secrets_in_text(original)
+        if scrubbed != original:
+            CRASH_LOG_PATH.write_text(scrubbed, encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - best effort
+        logger.debug("crash.log scrub skipped: %s", exc)
+
 
 def enable_crash_diagnostics() -> None:
     """Write Python/native stack traces to logs/crash.log on fatal errors."""
@@ -22,6 +48,7 @@ def enable_crash_diagnostics() -> None:
         return
 
     CRASH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _scrub_crash_log()
     _crash_file = open(CRASH_LOG_PATH, "a", encoding="utf-8")  # noqa: SIM115
     faulthandler.enable(file=_crash_file, all_threads=True)
     if hasattr(faulthandler, "register"):

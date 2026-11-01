@@ -36,7 +36,11 @@ class AppContext:
             PROMPT_DIR,
         )
         from pa_agent.config.settings import load_settings
-        from pa_agent.util.logging import configure_logging, update_api_key
+        from pa_agent.util.logging import (
+            configure_logging,
+            register_settings_secrets,
+            update_api_key,
+        )
         from pa_agent.util.event_bus import EventBus
         from pa_agent.util.mask_secret import mask_secret
         from pa_agent.data.factory import create_data_source, normalize_data_source_kind
@@ -56,8 +60,9 @@ class AppContext:
         sync_qclaw_agent_provider_on_load(settings, save_path=SETTINGS_JSON_PATH)
         sync_workbuddy_provider_on_load(settings, save_path=SETTINGS_JSON_PATH)
 
-        # ── Logging (with API key masking) ────────────────────────────────────
+        # ── Logging (with secret masking) ─────────────────────────────────────
         configure_logging(api_key=settings.provider.api_key)
+        register_settings_secrets(settings)
 
         app_logger = logging.getLogger("pa_agent")
 

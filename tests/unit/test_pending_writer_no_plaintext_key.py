@@ -10,8 +10,8 @@ Then verifies that save_full() and save_partial() produce files that:
   - do NOT contain the plaintext key
   - DO contain the mask_secret() form of the key
 
-Note: append_followup() is NOT required to sanitize per task 10.3 scope,
-so it is not tested here for the no-plaintext guarantee.
+append_followup() writes the user question and model answer verbatim, so it
+takes the same masking path as save_full()/save_partial().
 """
 from __future__ import annotations
 
@@ -196,9 +196,38 @@ def test_mask_secret_produces_meaningful_mask() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Note on append_followup
+# append_followup — same no-plaintext guarantee
 # ---------------------------------------------------------------------------
-# Per task 10.3 scope, append_followup() is NOT required to sanitize the
-# API key. Only save_full() and save_partial() provide the no-plaintext
-# guarantee (PR6.1). Therefore, no sanitization test is written for
-# append_followup here.
+
+
+def _make_turn(*, user: str) -> FollowupTurn:
+    return FollowupTurn(
+        turn=1,
+        ts_ms=1_700_000_000_000,
+        user=user,
+        ai_content="好的",
+        ai_reasoning=None,
+        usage={"prompt_tokens": 0, "completion_tokens": 0},
+    )
+
+class TestAppendFollowupNoPlaintextKey:
+    def test_plaintext_key_absent_from_sidecar(self, tmp_path: Path) -> None:
+        """A key pasted into the chat box must not land in the JSONL sidecar."""
+        writer = PendingWriter(pending_dir=tmp_path, api_key=API_KEY)
+        writer.append_followup(
+            "2026-05-18_14-00-13_XAUUSD_1h",
+            _make_turn(user=f"这是我跟你说过的 key：{API_KEY}"),
+        )
+        sidecar = tmp_path / "2026-05-18_14-00-13_XAUUSD_1h.followups.jsonl"
+        content = sidecar.read_text(encoding="utf-8")
+        assert API_KEY not in content
+        assert mask_secret(API_KEY) in content
+
+    def test_key_rotation_is_followed(self, tmp_path: Path) -> None:
+        """set_api_key must re-target masking after the user edits the key."""
+        writer = PendingWriter(pending_dir=tmp_path, api_key="old-key-0000000000")
+        writer.set_api_key(API_KEY)
+        writer.append_followup("rec", _make_turn(user=f"new key {API_KEY}"))
+        content = (tmp_path / "rec.followups.jsonl").read_text(encoding="utf-8")
+        assert API_KEY not in content
+        assert mask_secret(API_KEY) in content

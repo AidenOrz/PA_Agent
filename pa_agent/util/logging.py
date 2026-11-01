@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import re
 from pathlib import Path
 from typing import List
 
@@ -21,24 +22,58 @@ from pa_agent.util.mask_secret import mask_secret
 _active_formatters: List["MaskingFormatter"] = []
 _configured: bool = False
 
+# Shapes that are secrets no matter which config field they came from.  Order
+# matters: the longer/more specific patterns run first.
+_OBVIOUS_SECRET_RE = re.compile(
+    r"(sk-[A-Za-z0-9_\-]{12,})"
+    r"|(Bearer\s+[A-Za-z0-9._\-]{12,})"
+    r"|(/hook/[A-Za-z0-9\-]{12,})"
+    r"|([A-Za-z0-9._\-]{24,}\.[A-Za-z0-9._\-]{12,})"
+)
+
+
+def _mask_obvious_secrets(message: str) -> str:
+    """Mask token-looking substrings that were not registered explicitly."""
+
+    def _sub(match: re.Match) -> str:
+        return mask_secret(match.group(0))
+
+    return _OBVIOUS_SECRET_RE.sub(_sub, message)
+
 # ── MaskingFormatter ──────────────────────────────────────────────────────────
 
 
 class MaskingFormatter(logging.Formatter):
-    """Logging formatter that replaces the plaintext API key with its masked form."""
+    """Logging formatter that replaces every known secret with its masked form.
+
+    Besides the API key this covers the Feishu webhook/secret, PushPlus token and
+    Tushare token: a failing HTTP request logs its URL, and a Feishu hook URL
+    *is* the credential.  Any obvious secret shape (sk-..., Bearer ...,
+    /hook/<token>) is masked as a fallback for values we were never told about.
+    """
 
     def __init__(self, fmt: str, api_key: str = "") -> None:
         super().__init__(fmt)
-        self._api_key = api_key
+        self._api_key = ""
+        self._secrets: set[str] = set()
+        self.set_api_key(api_key)
 
     def format(self, record: logging.LogRecord) -> str:  # noqa: A003
         message = super().format(record)
-        if self._api_key:
-            message = message.replace(self._api_key, mask_secret(self._api_key))
-        return message
+        for secret in self._secrets:
+            message = message.replace(secret, mask_secret(secret))
+        return _mask_obvious_secrets(message)
 
     def set_api_key(self, new_key: str) -> None:
-        self._api_key = new_key
+        self._api_key = str(new_key or "")
+        if len(self._api_key) >= 4:
+            self._secrets.add(self._api_key)
+
+    def register_secret(self, secret: str) -> None:
+        """Add one more value to mask (too-short values are ignored)."""
+        value = str(secret or "").strip()
+        if len(value) >= 4:
+            self._secrets.add(value)
 
 
 # ── Public functions ──────────────────────────────────────────────────────────
@@ -172,7 +207,51 @@ def _silence_noisy_libraries() -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
+def mask_known_secrets_in_text(text: str) -> str:
+    """Mask every registered secret plus obvious token shapes in *text*.
+
+    Used for files that bypass ``MaskingFormatter`` (faulthandler dumps).
+    """
+    result = text
+    for formatter in _active_formatters:
+        for secret in getattr(formatter, "_secrets", ()):
+            result = result.replace(secret, mask_secret(secret))
+    return _mask_obvious_secrets(result)
+
+
 def update_api_key(new_key: str) -> None:
     """Update the masking key in all active MaskingFormatter instances."""
     for formatter in _active_formatters:
         formatter.set_api_key(new_key)
+
+
+def register_secret(secret: str) -> None:
+    """Register one more secret value (Feishu/PushPlus/Tushare) for masking."""
+    for formatter in _active_formatters:
+        formatter.register_secret(secret)
+
+
+def register_settings_secrets(settings: object | None) -> None:
+    """Register every credential carried by *settings* with the formatters.
+
+    ``configure_logging`` only knows the API key at startup; notification and
+    data-source credentials are loaded at the same time but were never masked,
+    so a failing Feishu request logged the full hook URL (the credential) in
+    clear text.
+    """
+    if settings is None:
+        return
+    provider = getattr(settings, "provider", None)
+    feishu = getattr(settings, "feishu", None)
+    pushplus = getattr(settings, "pushplus", None)
+    tushare = getattr(settings, "tushare", None)
+    values = [
+        getattr(provider, "api_key", ""),
+        getattr(feishu, "webhook_url", ""),
+        getattr(feishu, "secret", ""),
+        getattr(feishu, "app_secret", ""),
+        getattr(pushplus, "token", ""),
+        getattr(tushare, "token", ""),
+    ]
+    for value in values:
+        register_secret(str(value or ""))
