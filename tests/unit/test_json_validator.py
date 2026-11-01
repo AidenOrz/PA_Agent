@@ -254,3 +254,25 @@ def test_check_next_bar_prediction_invalid_fields_prefix():
     assert all(e.startswith("next_bar_prediction.") for e in errors), (
         f"Not all errors have prefix: {errors}"
     )
+
+def test_missing_jsonschema_fails_closed(monkeypatch) -> None:
+    """Without jsonschema there is no structural check, so refuse to return Ok.
+
+    Regression: the ImportError branch used to ``return Ok(obj=obj)``, which
+    silently accepted any dict — including "不下单" with non-null prices.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "jsonschema":
+            raise ImportError("simulated missing jsonschema")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    payload = {"decision": {"order_type": "不下单", "entry_price": 123.0}}
+    result = _validator.validate("stage2", json.dumps(payload, ensure_ascii=False))
+    assert isinstance(result, ValidationError)
+    assert result.category == "c"
+    assert "jsonschema" in (result.message or "").lower()

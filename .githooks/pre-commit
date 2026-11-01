@@ -1,5 +1,8 @@
 #!/bin/sh
 # Block accidental commit of API keys, local settings, logs, and analysis records.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# (tools/setup_git_secrets.ps1 does this on Windows.)
 set -e
 
 staged=$(git diff --cached --name-only --diff-filter=ACM)
@@ -26,12 +29,29 @@ for path in $staged; do
 	esac
 done
 
-if git diff --cached -U0 | grep '^+' | grep -v '^+++' | grep -E \
-	'api_key_encrypted["[:space:]]*:[[:space:]]*"[A-Za-z0-9+/=]{20,}"|"api_key"[[:space:]]*:[[:space:]]*"[^*]{8,}"|sk-[A-Za-z0-9]{12,}' \
-	>/dev/null 2>&1; then
-	echo "pre-commit: staged diff may contain API key material (api_key / api_key_encrypted / sk-...)"
-	echo "Unstage those changes; keep secrets in config/settings.json (gitignored) only."
-	exit 1
+# Scan the staged diff for credential-shaped additions.
+#
+# Exclusions (paths where fake keys are the point, or where the value is a
+# documented placeholder): tests/, docs/, *.example.*, README*, CHANGELOG*,
+# CONTRIBUTING* and SECURITY*.  Everything else is scanned.
+#
+# The pattern requires a key/secret/token-ish name followed by : or = and a
+# quoted value of 16+ chars (or a bare sk-/Bearer/hook token), so it does not
+# fire on `your-api-key-here` placeholders or on 12-char test fixtures.
+scan_targets=$(printf "%s\n" "$staged" | grep -v -E \
+	"^(tests/|docs/|\.githooks/|.*\.example\.|README|CHANGELOG|CONTRIBUTING|SECURITY|AGENTS|MEMORY|HANDOFF)" || true)
+
+if [ -n "$scan_targets" ]; then
+	# NOTE: double quotes so the ERE can embed both " and ' — grep -E has no
+	# \x27 escape, and single-quoting the whole pattern (the old version) made
+	# a bare api_key="..." line slip through.
+	if git diff --cached -U0 -- $scan_targets | grep '^+' | grep -v '^+++' | grep -E \
+		"[\"\']?(api_key|apikey|api_secret|app_secret|secret|token|webhook_url|password)[\"\']?[[:space:]]*[:=][[:space:]]*[\"\'][^\"\'*]{16,}[\"\']|sk-[A-Za-z0-9_-]{16,}|Bearer[[:space:]]+[A-Za-z0-9._-]{16,}|/hook/[A-Za-z0-9-]{16,}" \
+		>/dev/null 2>&1; then
+		echo "pre-commit: staged diff may contain credential material"
+		echo "Unstage those changes; keep secrets in config/settings.json (gitignored) only."
+		exit 1
+	fi
 fi
 
 exit 0

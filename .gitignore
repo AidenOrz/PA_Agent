@@ -70,6 +70,12 @@ MAC*.txt
 .vscode/
 .cursor/
 .kiro/
+.workbuddy/
+
+# ── 审查/调试用的临时脚本与日志（.tmp- 前缀）────────────────────────────────
+/.tmp-*
+/tmp_*.py
+/tmp_*.log
 
 # ── tools 目录下的本地诊断输出（保留 .py 脚本本身）──────────────────────────
 tools/_pending_order_report.txt

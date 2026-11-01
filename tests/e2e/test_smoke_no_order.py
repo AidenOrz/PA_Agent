@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 import pyqtgraph as pg
 
-from pa_agent.app_context import AppContext
+from tests.e2e.smoke_support import SmokeDataSource, make_smoke_ctx
 from tests.fixtures.kline_bars import make_newest_first_bars
 from tests.fixtures.validators import schema_test_validator
 from pa_agent.ai.router import route_strategy_files
@@ -44,14 +44,12 @@ def _make_ctx(tmp_path):
 
     pending_writer = MagicMock()
 
-    ctx = AppContext()
+    bars = make_newest_first_bars(30, with_forming=True)
+    source = SmokeDataSource(bars)
+    ctx = make_smoke_ctx(source)
     ctx.client = mock_client
     ctx.assembler = mock_assembler
-    ctx.router = route_strategy_files
-    ctx.validator = schema_test_validator()
     ctx.pending_writer = pending_writer
-    ctx.exp_reader = MagicMock()
-    ctx.exp_reader.read_top5.return_value = []
 
     return ctx, pending_writer
 
@@ -67,8 +65,8 @@ def test_no_order_shows_no_trade_conclusion(qtbot, tmp_path):
     qtbot.addWidget(window)
     window.show()
 
-    window._ctx.settings.general.analysis_bar_count = 5
-    window._last_frame_ready_bars = make_newest_first_bars(9, with_forming=True)
+    window._ctx.settings.general.analysis_bar_count = 20
+    window._last_frame_ready_bars = make_newest_first_bars(30, with_forming=True)
     window._on_submit_analysis()
 
     # Poll until the analysis is no longer in progress
@@ -83,12 +81,14 @@ def test_no_order_shows_no_trade_conclusion(qtbot, tmp_path):
         f"Expected 不下单 conclusion, got: {conclusion_text!r}"
     )
 
-    # Chart should have no InfiniteLine items (no entry/TP/SL lines)
+    # Chart must not draw entry/TP/SL lines for 不下单.  Support/resistance
+    # levels come from the Stage-1 structure and legitimately stay on screen,
+    # so only the decision overlay is checked here.
     chart = window._chart_widget
-    infinite_lines = [
-        item for item in chart.items()
+    overlay_lines = [
+        item for item in chart.decision_overlay_items()
         if isinstance(item, pg.InfiniteLine)
     ]
-    assert len(infinite_lines) == 0, (
-        f"Expected no InfiniteLine items for 不下单, found {len(infinite_lines)}"
+    assert overlay_lines == [], (
+        f"Expected no entry/TP/SL lines for 不下单, found {len(overlay_lines)}"
     )

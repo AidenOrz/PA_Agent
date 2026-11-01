@@ -561,8 +561,24 @@ class JsonValidator:
         try:
             import jsonschema  # type: ignore[import]
         except ImportError:
-            logger.warning("jsonschema not installed; skipping schema validation")
-            return Ok(obj=obj)
+            # Fail closed.  Schema validation is the only thing enforcing
+            # "不下单 => prices are all null" and the trade-field contract;
+            # returning Ok() here silently accepted any dict the model
+            # produced (packaged / cut-down environments had exactly this hole).
+            logger.error(
+                "jsonschema is not installed; refusing %s output without validation",
+                stage,
+            )
+            return ValidationError(
+                category="c",
+                stage=stage,
+                raw_text=raw_text,
+                message=(
+                    "缺少 jsonschema 依赖，无法校验结构化输出。"
+                    "请执行 pip install jsonschema 后重试。"
+                ),
+                invalid_fields=["environment:jsonschema_missing"],
+            )
 
         errors = list(jsonschema.Draft7Validator(schema).iter_errors(obj))
 

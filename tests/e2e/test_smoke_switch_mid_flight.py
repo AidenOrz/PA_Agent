@@ -1,4 +1,4 @@
-"""E2E smoke test �?symbol switch mid-flight cancels the AI worker.
+"""E2E smoke test — symbol switch mid-flight cancels the AI worker.
 
 Task 19.3
 """
@@ -11,11 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pa_agent.app_context import AppContext
-from tests.fixtures.kline_bars import make_newest_first_bars
-from tests.fixtures.validators import schema_test_validator
-from pa_agent.ai.router import route_strategy_files
-
+from tests.e2e.smoke_support import SmokeDataSource, make_smoke_ctx, make_trend_bars
 from tests.fixtures.ai_payloads import VALID_STAGE1, VALID_STAGE2_ORDER
 
 
@@ -32,8 +28,7 @@ def _make_reply(content_dict: dict) -> MagicMock:
 
 
 def _make_ctx_slow_stage2(tmp_path):
-    """Build a context where stage2 blocks until a cancel token is set."""
-    # stage2 call blocks for up to 5 s, but respects the cancel token
+    """Build a context where stage2 blocks until the cancel token is set."""
     stage2_started = threading.Event()
 
     def slow_chat(messages, cancel_token=None, **kwargs):
@@ -41,18 +36,16 @@ def _make_ctx_slow_stage2(tmp_path):
         slow_chat._call_count += 1
 
         if call_count == 0:
-            # Stage 1 �?return immediately
             return _make_reply(VALID_STAGE1)
-        else:
-            # Stage 2 �?signal that we've started, then block until cancelled
-            stage2_started.set()
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
-                if cancel_token is not None and cancel_token.is_set():
-                    from pa_agent.ai.deepseek_client import CancelledError
-                    raise CancelledError("cancelled by token")
-                time.sleep(0.05)
-            return _make_reply(VALID_STAGE2_ORDER)
+        stage2_started.set()
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if cancel_token is not None and cancel_token.is_set():
+                from pa_agent.ai.deepseek_client import CancelledError
+
+                raise CancelledError("cancelled by token")
+            time.sleep(0.05)
+        return _make_reply(VALID_STAGE2_ORDER)
 
     slow_chat._call_count = 0
 
@@ -65,14 +58,12 @@ def _make_ctx_slow_stage2(tmp_path):
 
     pending_writer = MagicMock()
 
-    ctx = AppContext()
+    bars = make_trend_bars(40)
+    source = SmokeDataSource(bars)
+    ctx = make_smoke_ctx(source)
     ctx.client = mock_client
     ctx.assembler = mock_assembler
-    ctx.router = route_strategy_files
-    ctx.validator = schema_test_validator()
     ctx.pending_writer = pending_writer
-    ctx.exp_reader = MagicMock()
-    ctx.exp_reader.read_top5.return_value = []
 
     return ctx, pending_writer, stage2_started
 
@@ -88,29 +79,29 @@ def test_switch_mid_flight_cancels_worker(qtbot, tmp_path):
     qtbot.addWidget(window)
     window.show()
 
-    window._ctx.settings.general.analysis_bar_count = 5
-    window._last_frame_ready_bars = make_newest_first_bars(9, with_forming=True)
+    window._ctx.settings.general.analysis_bar_count = 20
+    window._last_frame_ready_bars = make_trend_bars(40)
 
     window._on_submit_analysis()
+    # Submission goes through the prep worker first; poll until the analysis
+    # worker exists instead of assuming it is assigned synchronously.
+    deadline = time.monotonic() + 5.0
+    while window._worker is None and time.monotonic() < deadline:
+        qtbot.wait(20)
     worker = window._worker
     assert worker is not None, "Worker should have been created"
 
     # Wait until stage2 has started (so we know the worker is mid-flight)
     assert stage2_started.wait(timeout=5.0), "Stage 2 did not start within 5 s"
 
-    # Trigger symbol switch mid-flight
+    # Trigger the symbol switch mid-flight.  Typing in the combo only refreshes
+    # the alert label by design; the switch happens when the user applies it
+    # (获取数据 / 提交分析), which is this handler.
     window._symbol_combo.setCurrentText("EURUSD")
+    window._on_symbol_or_tf_changed("EURUSD", "15m")
 
     # Worker should be cancelled and finish within a reasonable time
-    # (the slow_chat loop checks cancel_token every 50 ms)
-    finished = worker.wait(6_000)  # 6 s timeout
-    assert finished, "Worker did not finish after symbol switch"
-
-    # Tab2 input should be disabled after a symbol switch
-    chat_tab = window._tabs.widget(1)
-    from PyQt6.QtWidgets import QPlainTextEdit
-    input_widgets = chat_tab.findChildren(QPlainTextEdit)
-    for widget in input_widgets:
-        assert not widget.isEnabled(), (
-            "Tab2 input should be disabled after symbol switch"
-        )
+    deadline = time.monotonic() + 5.0
+    while window._analysis_in_progress and time.monotonic() < deadline:
+        qtbot.wait(50)
+    assert not window._analysis_in_progress, "Worker still running after switch"

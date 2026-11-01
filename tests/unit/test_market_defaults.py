@@ -17,6 +17,7 @@ from pa_agent.data.market_defaults import (
     tv_auto_probe_plan,
     tv_forex_auto_probe_plan,
 )
+from pa_agent.data.market_defaults import TV_CRYPTO_EXCHANGES, TV_EQUITY_EXCHANGES, TV_GOLD_SYMBOL_BY_EXCHANGE
 from pa_agent.data.tradingview import TV_EXCHANGE_PRESETS
 
 
@@ -36,16 +37,37 @@ def test_tv_exchange_auto_preserved():
     assert normalize_gold_tv_exchange("OANDA") == "OANDA"
 
 
-def test_tv_forex_auto_probe_tries_all_forex_presets():
+def test_tv_forex_auto_probe_skips_venues_without_a_gold_feed():
+    """Auto-probe for gold must filter to venues that actually list it.
+
+    ``tv_forex_auto_probe_plan`` skips exchanges missing from
+    ``TV_GOLD_SYMBOL_BY_EXCHANGE`` (SP/NYSE/NASDAQ/CBOT/CME_MINI); probing them
+    only burns the 50 s connect timeout.
+    """
     plan = tv_forex_auto_probe_plan("XAUUSD")
     exchanges = [ex for ex, _ in plan]
     assert exchanges == [
         ex
         for ex in TV_EXCHANGE_PRESETS
-        if ex and ex not in {"SSE", "SZSE", "HKEX"}
+        if ex
+        and ex not in {"SSE", "SZSE", "HKEX"}
+        and ex in TV_GOLD_SYMBOL_BY_EXCHANGE
     ]
     assert ("OANDA", "XAUUSD") in plan
     assert ("TVC", "GOLD") in plan
+    assert "SP" not in exchanges
+
+
+def test_tv_forex_auto_probe_non_gold_uses_all_venues():
+    """Non-gold forex symbols are probed on every non-equity venue."""
+    plan = tv_forex_auto_probe_plan("EURUSD")
+    exchanges = [ex for ex, _ in plan]
+    assert exchanges == [
+        ex
+        for ex in TV_EXCHANGE_PRESETS
+        if ex and ex not in TV_EQUITY_EXCHANGES and ex not in TV_CRYPTO_EXCHANGES
+    ]
+    assert ("OANDA", "EURUSD") in plan
 
 
 def test_tv_auto_probe_ashare_still_two_venues():

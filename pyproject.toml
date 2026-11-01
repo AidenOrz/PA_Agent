@@ -22,7 +22,6 @@ dependencies = [
     "MetaTrader5>=5.0; sys_platform == 'win32'",
     "tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git",
     "cryptography>=42",
-    "pywin32>=306; sys_platform == 'win32'",
     "akshare>=1.14",
     "baostock>=0.8",
     "curl_cffi>=0.13",
@@ -38,6 +37,9 @@ ashare-fallback = [
 ]
 dev = [
     "pytest>=8",
+    # A hung Qt test used to block the whole suite until someone killed the
+    # process; pytest-timeout turns that into a normal failure.
+    "pytest-timeout>=2.3",
     "pytest-qt>=4.4",
     "hypothesis>=6",
     "ruff>=0.5",
@@ -64,7 +66,9 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# 120 s per test: the e2e smoke tests drive the Qt event loop, and a regression
+# there must fail the run instead of hanging it.
+addopts = "-q --timeout=120"
 # The app is PyQt6-only (see dependencies + all imports). Without this,
 # pytest-qt auto-detects and may pick PySide6 when both bindings are installed,
 # making isinstance(widget, QWidget) fail inside qtbot.addWidget.

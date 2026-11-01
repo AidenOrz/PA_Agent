@@ -1,19 +1,23 @@
 """E2E smoke test — happy path: two-stage analysis produces a trading decision.
 
 Task 19.1
+
+The sentinel reply below is not the shared ``VALID_STAGE2`` fixture: that
+fixture carries entry=2010.5 / stop=1995 / tp=2050 prices that no longer match
+the synthetic 2080-2090 snapshots, so the program trade-metrics guard (RR floor,
+TP2 geometry, K1 freshness) correctly rewrote it to 不下单 and the "happy path"
+assertion could never pass.  Prices here are derived from the newest closed bar
+with a deliberately conservative RR inside the 1.0-1.5 TP1 band.
 """
 from __future__ import annotations
 
+import copy
 import json
 from unittest.mock import MagicMock
 
 import pytest
 
-from pa_agent.app_context import AppContext
-from tests.fixtures.kline_bars import make_newest_first_bars
-from tests.fixtures.validators import schema_test_validator
-from pa_agent.ai.router import route_strategy_files
-
+from tests.e2e.smoke_support import SmokeDataSource, make_smoke_ctx, make_trend_bars
 from tests.fixtures.ai_payloads import VALID_STAGE1, VALID_STAGE2_ORDER
 
 
@@ -29,10 +33,46 @@ def _make_reply(content_dict: dict) -> MagicMock:
     return reply
 
 
+def make_trade_payload() -> dict:
+    """A breakout order whose prices satisfy the program trade guards."""
+    from pa_agent.data.snapshot import take_snapshot_from_bars
+
+    payload = copy.deepcopy(VALID_STAGE2_ORDER)
+    # Use the same frame the orchestrator will build: the normalizer recomputes
+    # a breakout entry as "K1 high + 1 tick", so K1 must be read from there.
+    frame = take_snapshot_from_bars(make_trend_bars(40), 20, "XAUUSDm", "15m")
+    k1_high = float(frame.bars[0].high)
+    # A breakout order is program-repriced to "K1 high + 1 tick" (tick inferred
+    # from the snapshot decimals), so derive the plan from that exact entry —
+    # otherwise the repricing silently rewrites the risk/reward under test.
+    entry = round(k1_high + 0.01, 2)
+    risk = 2.0
+    decision = payload["decision"]
+    decision.update(
+        {
+            "order_type": "突破单",
+            "order_direction": "做多",
+            "entry_price": entry,
+            "stop_loss_price": round(entry - risk, 2),
+            "take_profit_price": round(entry + risk * 1.3, 2),
+            "take_profit_price_2": round(entry + risk * 2.6, 2),
+            "entry_basis_bar": "K1",
+            "entry_basis_extreme": "high",
+            "entry_rule": "breakout above K1 high by 1 tick",
+            "estimated_win_rate": 55,
+        }
+    )
+    payload["terminal"] = {"node_id": "11.2", "outcome": "trade", "label": "10.3 pass"}
+    for node in payload["decision_trace"]:
+        if str(node.get("node_id")) == "10.3":
+            node["answer"] = "是"
+    return payload
+
+
 def _make_ctx(tmp_path, stage2_response=None):
     """Build a minimal AppContext with all required components."""
     if stage2_response is None:
-        stage2_response = VALID_STAGE2_ORDER
+        stage2_response = make_trade_payload()
 
     mock_client = MagicMock()
     mock_client.stream_chat.side_effect = [
@@ -46,14 +86,12 @@ def _make_ctx(tmp_path, stage2_response=None):
 
     pending_writer = MagicMock()
 
-    ctx = AppContext()
+    bars = make_trend_bars(40)
+    source = SmokeDataSource(bars)
+    ctx = make_smoke_ctx(source)
     ctx.client = mock_client
     ctx.assembler = mock_assembler
-    ctx.router = route_strategy_files
-    ctx.validator = schema_test_validator()
     ctx.pending_writer = pending_writer
-    ctx.exp_reader = MagicMock()
-    ctx.exp_reader.read_top5.return_value = []
 
     return ctx, pending_writer
 
@@ -69,8 +107,8 @@ def test_happy_path_shows_trading_decision(qtbot, tmp_path):
     qtbot.addWidget(window)
     window.show()
 
-    window._ctx.settings.general.analysis_bar_count = 5
-    window._last_frame_ready_bars = make_newest_first_bars(9, with_forming=True)
+    window._ctx.settings.general.analysis_bar_count = 20
+    window._last_frame_ready_bars = make_trend_bars(40)
 
     window._on_submit_analysis()
 
