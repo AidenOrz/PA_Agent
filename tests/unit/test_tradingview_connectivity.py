@@ -109,6 +109,10 @@ def test_probe_timeout_does_not_wait_for_stuck_worker() -> None:
     release = threading.Event()
 
     class _StuckSource:
+        # Accepts proxy_override kwarg (and anything else future versions add).
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
         def set_exchange(self, _exchange: str) -> None:
             pass
 

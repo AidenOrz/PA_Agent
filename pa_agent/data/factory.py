@@ -80,9 +80,14 @@ def create_data_source(kind: str | None) -> DataSource:
     """Instantiate a fresh data source for *kind* (not connected)."""
     normalized = normalize_data_source_kind(kind)
     if normalized == "tradingview":
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
+        from pa_agent.config.settings import load_settings
         from pa_agent.data.tradingview import TradingViewSource
 
-        return TradingViewSource()
+        settings = load_settings(SETTINGS_JSON_PATH)
+        return TradingViewSource(
+            proxy_override=str(getattr(settings.general, "tradingview_proxy", "") or "")
+        )
     if normalized == "westock":
         from pa_agent.data.westock_source import WeStockSource
 

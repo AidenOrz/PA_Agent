@@ -20,9 +20,20 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
         # TradingViewSource._patch_ws_proxy) is applied — a bare TvDatafeed()
         # would connect directly and time out on networks where
         # data.tradingview.com is only reachable through a proxy.
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
+        from pa_agent.config.settings import load_settings
         from pa_agent.data.tradingview import TradingViewSource
 
-        src = TradingViewSource()
+        proxy_override = ""
+        try:
+            settings = load_settings(SETTINGS_JSON_PATH)
+            proxy_override = str(
+                getattr(settings.general, "tradingview_proxy", "") or ""
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("could not load settings for TV proxy override", exc_info=True)
+
+        src = TradingViewSource(proxy_override=proxy_override)
         src.set_exchange("OANDA")
         src.subscribe("XAUUSD", "1m")
         try:

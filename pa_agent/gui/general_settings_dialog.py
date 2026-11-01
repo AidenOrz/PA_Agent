@@ -128,6 +128,23 @@ class GeneralSettingsDialog(QDialog):
 
         form_layout.addWidget(analysis_group)
 
+        # ── 数据源 ────────────────────────────────────────────────────────────
+        source_group = QGroupBox("数据源")
+        source_form = QFormLayout(source_group)
+
+        self._tv_proxy_edit = QLineEdit()
+        self._tv_proxy_edit.setPlaceholderText("http://127.0.0.1:7890（留空 = 自动探测）")
+        self._tv_proxy_edit.setToolTip(
+            "TradingView 行情 WebSocket 使用的代理地址，仅影响 TradingView 数据源。\n\n"
+            "留空时自动探测顺序：代理环境变量 → Windows 系统代理 →\n"
+            "常见本地端口（Clash 7890 / V2Ray 10808 等）。\n\n"
+            "手动填写后优先级最高，且不受 NO_PROXY 白名单影响。\n"
+            "保存后需重新选择数据源（或重启程序）才会生效。"
+        )
+        source_form.addRow("TradingView 代理:", self._tv_proxy_edit)
+
+        form_layout.addWidget(source_group)
+
         # ── 图表与界面 ────────────────────────────────────────────────────────
         ui_group = QGroupBox("图表与界面")
         ui_form = QFormLayout(ui_group)
@@ -232,6 +249,8 @@ class GeneralSettingsDialog(QDialog):
         self._last_symbol_edit.setText(g.last_symbol)
         self._last_timeframe_edit.setText(g.last_timeframe)
 
+        self._tv_proxy_edit.setText(getattr(g, "tradingview_proxy", ""))
+
         self._refresh_interval_spin.setValue(g.refresh_interval_ms)
         self._auto_resume_chart_check.setChecked(
             bool(getattr(g, "auto_resume_chart_after_analysis", False))
@@ -263,6 +282,22 @@ class GeneralSettingsDialog(QDialog):
         g.cancel_keep_analysis_on_retry = self._cancel_keep_on_retry_check.isChecked()
         g.last_symbol = self._last_symbol_edit.text().strip()
         g.last_timeframe = self._last_timeframe_edit.text().strip()
+
+        tv_proxy = self._tv_proxy_edit.text().strip()
+        if tv_proxy:
+            from urllib.parse import urlparse
+
+            normalized = tv_proxy if "://" in tv_proxy else f"http://{tv_proxy}"
+            if not urlparse(normalized).hostname:
+                QMessageBox.warning(
+                    self,
+                    "TradingView 代理地址无效",
+                    f"无法解析代理地址：{tv_proxy}\n\n"
+                    "示例：http://127.0.0.1:7890 或 127.0.0.1:7890\n"
+                    "如要恢复自动探测，请清空该输入框。",
+                )
+                return
+        g.tradingview_proxy = tv_proxy
 
         g.refresh_interval_ms = self._refresh_interval_spin.value()
         g.auto_resume_chart_after_analysis = self._auto_resume_chart_check.isChecked()

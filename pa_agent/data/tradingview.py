@@ -80,9 +80,16 @@ TV_EXCHANGE_PRESETS: tuple[str, ...] = (
 class TradingViewSource(DataSource):
     """Live K-line data from TradingView via tvdatafeed."""
 
-    def __init__(self, username: str = "", password: str = "") -> None:
+    def __init__(
+        self,
+        username: str = "",
+        password: str = "",
+        proxy_override: str = "",
+    ) -> None:
         self._username = username
         self._password = password
+        # Manual proxy override (e.g. from the settings UI); empty = auto-detect.
+        self._proxy_override = (proxy_override or "").strip()
         self._tv = None          # tvDatafeed instance
         self._connected: bool = False
         self._symbol: str = ""
@@ -109,6 +116,13 @@ class TradingViewSource(DataSource):
     def set_exchange(self, exchange: str) -> None:
         """Set TradingView exchange id (e.g. ``BINANCE``); empty = auto-detect."""
         self._exchange = (exchange or "").strip().upper()
+
+    def set_proxy_override(self, proxy: str) -> None:
+        """Set a manual proxy (e.g. ``http://127.0.0.1:7890``); empty = auto-detect.
+
+        Must be called before :meth:`connect` — the patch is installed there.
+        """
+        self._proxy_override = (proxy or "").strip()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -163,18 +177,19 @@ class TradingViewSource(DataSource):
         """
         if self._orig_create_connection is not None:
             return  # already patched
-        proxy = self._detect_proxy()
+        proxy = self._detect_proxy(self._proxy_override)
         if proxy is None:
             logger.info("未检测到可用代理，TradingView 将直连（可能超时）")
             return
         proxy_url, host, port, proxy_source = proxy
+        # Respect NO_PROXY / ProxyOverride for auto-detected proxies only —
+        # a manually configured proxy is an explicit user choice and wins.
+        if proxy_source != "manual":
+            no_proxy = os.environ.get("NO_PROXY", "").lower()
+            if "data.tradingview.com" in no_proxy or "tradingview.com" in no_proxy:
+                logger.info("tradingview.com in NO_PROXY — skip proxy patch")
+                return
         self._proxy_source = proxy_source
-        # Respect NO_PROXY / ProxyOverride: skip patch when the target host
-        # is whitelisted for direct connection.
-        no_proxy = os.environ.get("NO_PROXY", "").lower()
-        if "data.tradingview.com" in no_proxy or "tradingview.com" in no_proxy:
-            logger.info("tradingview.com in NO_PROXY — skip proxy patch")
-            return
 
         import tvDatafeed.main as tv_main  # type: ignore[import]
 
@@ -197,11 +212,23 @@ class TradingViewSource(DataSource):
         logger.info("Patched tvDatafeed WebSocket to use proxy %s (from %s)", proxy_url, self._proxy_source)
 
     @staticmethod
-    def _detect_proxy() -> tuple[str, str, int, str] | None:
+    def _detect_proxy(override: str = "") -> tuple[str, str, int, str] | None:
         """Return (proxy_url, host, port, source) of the best available proxy.
 
-        Order: env vars → Windows system proxy → common local ports.
+        A non-empty *override* (e.g. from the settings UI) wins over every
+        auto-detection method. Auto-detect order: env vars → Windows system
+        proxy → common local ports.
         """
+        # 0. Manual override from the settings UI (highest priority)
+        raw = (override or "").strip()
+        if raw:
+            normalized = raw if "://" in raw else f"http://{raw}"
+            parsed = urllib.parse.urlparse(normalized)
+            if parsed.hostname:
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                return normalized, parsed.hostname, port, "manual"
+            logger.warning("手动代理地址无效（忽略并回退自动探测）：%r", raw)
+
         # 1. Environment variables
         for key in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
             raw = os.environ.get(key, "").strip()

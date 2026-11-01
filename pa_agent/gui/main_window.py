@@ -330,8 +330,8 @@ class MainWindow(QMainWindow):
         _feishu_action.triggered.connect(self._open_feishu_settings_dialog)
         menu_bar.addAction(_feishu_action)
 
-        # 3. 其他通用设置 — 点击直接弹对话框（无下拉）
-        _general_action = QAction("其他通用设置", self)
+        # 3. 通用设置 — 点击直接弹对话框（无下拉）
+        _general_action = QAction("通用设置", self)
         _general_action.triggered.connect(self._open_general_settings_dialog)
         menu_bar.addAction(_general_action)
 
@@ -4028,22 +4028,41 @@ class MainWindow(QMainWindow):
         ).start()
 
     def _maybe_alert_order_opportunity(self, decision_inner: dict) -> bool:
-        """Beep, popup, and focus decision tab when stage-2 proposes an order."""
+        """Beep, popup, and focus decision tab when stage-2 proposes an order.
+
+        Tab switch and popup are deferred by one event-loop pass so the
+        worker cleanup in ``_on_worker_done`` (chart resume, keep-analysis
+        sentinel, submit button) always completes first — a hang in window
+        creation must never stall the analysis-flow bookkeeping.  Each step
+        is logged so a freeze can be pinpointed from pa_agent.log alone.
+        """
         if not self._order_opportunity_alert_enabled():
             return False
         if not self._has_order_opportunity(decision_inner):
             return False
+
+        from PyQt6.QtCore import QTimer
 
         from pa_agent.gui.order_opportunity import (
             play_order_alert_sound,
             show_order_opportunity_alert,
         )
 
+        logger.info("Order alert: playing sound (background thread)")
         play_order_alert_sound()
+
         sidebar = getattr(self, "_ai_sidebar", None)
-        if sidebar is not None:
-            sidebar.focus_decision()
-        show_order_opportunity_alert(self, decision_inner)
+
+        def _show_alert() -> None:
+            logger.info("Order alert: switching to decision tab")
+            if sidebar is not None:
+                sidebar.focus_decision()
+            logger.info("Order alert: showing popup")
+            show_order_opportunity_alert(self, decision_inner)
+            logger.info("Order alert: popup shown")
+
+        QTimer.singleShot(0, _show_alert)
+        logger.info("Order alert: deferred popup scheduled")
         return True
 
     def _trigger_decision_flow_playback(self) -> None:

@@ -79,6 +79,9 @@ class GeneralSettings(BaseModel):
     kline_adjust: Literal["qfq", "hfq", "none"] = "qfq"
     #: TradingView 交易所；空字符串 =（自动）依次探测预设列表
     last_tradingview_exchange: str = ""
+    #: TradingView WebSocket 代理地址（如 http://127.0.0.1:7890）；
+    #: 空字符串 = 自动探测（环境变量 → 系统代理 → 常见本地端口）
+    tradingview_proxy: str = ""
     last_symbol: str = "XAUUSDm"
     last_timeframe: str = "15m"
     decision_flow_auto_play: bool = True

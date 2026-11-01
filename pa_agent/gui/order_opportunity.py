@@ -115,46 +115,71 @@ def show_order_opportunity_alert(parent: Any, decision: dict[str, Any]) -> None:
 
 
 def play_order_alert_sound() -> bool:
-    """Play a short alert sound (best-effort). Returns True if playback was attempted."""
-    if sys.platform == "win32":
-        import winsound
+    """Play a short alert sound (best-effort). Returns True if playback was attempted.
 
-        for path in _windows_alert_wav_paths():
-            if not os.path.isfile(path):
-                continue
-            try:
-                winsound.PlaySound(
-                    path,
-                    winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
-                )
-                return True
-            except Exception as exc:
-                logger.debug("order alert PlaySound file %s failed: %s", path, exc)
+    Playback runs on a daemon thread: ``winsound.PlaySound`` talks to winmm,
+    which can stall on misbehaving audio stacks — it must never run on the
+    GUI thread, or an audio-stack hiccup freezes the whole app right when
+    the order-opportunity alert fires.
+    """
+    import threading
 
-        for alias in ("SystemExclamation", "SystemHand", "SystemAsterisk"):
+    attempted = threading.Event()
+
+    def _play() -> None:
+        if sys.platform == "win32":
+            import winsound
+
+            for path in _windows_alert_wav_paths():
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    winsound.PlaySound(
+                        path,
+                        winsound.SND_FILENAME
+                        | winsound.SND_ASYNC
+                        | winsound.SND_NODEFAULT,
+                    )
+                    attempted.set()
+                    return
+                except Exception as exc:
+                    logger.debug(
+                        "order alert PlaySound file %s failed: %s", path, exc
+                    )
+
+            for alias in ("SystemExclamation", "SystemHand", "SystemAsterisk"):
+                try:
+                    winsound.PlaySound(
+                        alias,
+                        winsound.SND_ALIAS
+                        | winsound.SND_ASYNC
+                        | winsound.SND_NODEFAULT,
+                    )
+                    attempted.set()
+                    return
+                except Exception as exc:
+                    logger.debug(
+                        "order alert PlaySound alias %s failed: %s", alias, exc
+                    )
+
             try:
-                winsound.PlaySound(
-                    alias,
-                    winsound.SND_ALIAS | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
-                )
-                return True
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                attempted.set()
+                return
             except Exception as exc:
-                logger.debug("order alert PlaySound alias %s failed: %s", alias, exc)
+                logger.debug("order alert MessageBeep failed: %s", exc)
 
         try:
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-            return True
+            from PyQt6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                app.beep()
+                attempted.set()
         except Exception as exc:
-            logger.debug("order alert MessageBeep failed: %s", exc)
+            logger.debug("order alert QApplication.beep failed: %s", exc)
 
-    try:
-        from PyQt6.QtWidgets import QApplication
-
-        app = QApplication.instance()
-        if app is not None:
-            app.beep()
-            return True
-    except Exception as exc:
-        logger.debug("order alert QApplication.beep failed: %s", exc)
-
-    return False
+    threading.Thread(
+        target=_play, name="order-alert-sound", daemon=True
+    ).start()
+    return True
