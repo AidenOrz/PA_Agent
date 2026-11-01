@@ -1084,6 +1084,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+ashare-fallback = [
+    { name = "zzshare" },
+]
 dev = [
     { name = "black" },
     { name = "hypothesis" },
@@ -1116,8 +1119,9 @@ requires-dist = [
     { name = "tiktoken", specifier = ">=0.7" },
     { name = "tushare", specifier = ">=1.4" },
     { name = "tvdatafeed", git = "https://github.com/rongardF/tvdatafeed.git" },
+    { name = "zzshare", marker = "extra == 'ashare-fallback'" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["ashare-fallback", "dev"]
 
 [[package]]
 name = "packaging"
@@ -2109,4 +2113,17 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/07/5a/377161c2d3538d1990d7af382c79f3b2372e880b65de21b01b1a2b78691e/xlrd-2.0.2.tar.gz", hash = "sha256:08b5e25de58f21ce71dc7db3b3b8106c1fa776f3024c54e45b45b374e89234c9", size = 100167, upload-time = "2025-06-14T08:46:39.039Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl", hash = "sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9", size = 96555, upload-time = "2025-06-14T08:46:37.766Z" },
+]
+
+[[package]]
+name = "zzshare"
+version = "0.4.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pandas" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/9e/5bd936dd5f0d4fc3b3533f617fedab0e488d5255e6d4c284364da89056ed/zzshare-0.4.13.tar.gz", hash = "sha256:5f5b69852f0c64e9dbeff577953dca67dc7f27a0db9af0c748ac79bfa7ede021", size = 42989, upload-time = "2026-10-31T14:24:39.344Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/0e/cbd05154507a1189ae876405490056241aba9cb944ce9ea7ca008d8ea5ed/zzshare-0.4.13-py3-none-any.whl", hash = "sha256:7db2027d9e21eba15eb9eed138ceb7298d06e859b0ba86540682fb23bd690634", size = 36733, upload-time = "2026-10-31T14:24:37.919Z" },
 ]
