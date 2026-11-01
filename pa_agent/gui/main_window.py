@@ -1,10 +1,10 @@
-﻿"""Main application window for PA Agent."""
+"""Main application window for PA Agent."""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal, QObject
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal, pyqtSlot, QObject
 from PyQt6.QtGui import QAction, QCloseEvent, QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -33,6 +33,38 @@ logger = logging.getLogger(__name__)
 
 # Zombie timeout in milliseconds (5 seconds)
 _WORKER_JOIN_TIMEOUT_MS = 5000
+
+
+def _source_attr(source: Any, public: str, private: str, default: Any) -> Any:
+    """Read a data-source attribute, preferring the public name.
+
+    Duck-typed stubs (tests, third-party adapters) only define the private
+    attribute, so the public read must degrade instead of returning default.
+    """
+    value = getattr(source, public, None)
+    if value is None:
+        value = getattr(source, private, default)
+    return value
+
+
+def _is_cancellation(exc: BaseException) -> bool:
+    """True when *exc* (or a wrapped cause) is a user cancellation.
+
+    The orchestrator raises CancelledError directly, but validation-retry
+    wrappers re-raise it as ``__cause__``; walk the chain like
+    ``two_stage._is_cancelled_exception`` does.
+    """
+    from pa_agent.ai.deepseek_client import CancelledError
+
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while isinstance(current, BaseException) and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, CancelledError):
+            return True
+        nxt = getattr(current, "cause", None) or getattr(current, "__cause__", None)
+        current = nxt if isinstance(nxt, BaseException) else None
+    return False
 
 
 def _qobject_alive(obj: QObject | None) -> bool:
@@ -114,6 +146,7 @@ class _AnalysisWorker(QThread):
     finished = pyqtSignal(dict)
     record_ready = pyqtSignal(object)   # emits the full AnalysisRecord
     error_occurred = pyqtSignal(str)    # unhandled worker/orchestrator failure
+    cancelled = pyqtSignal()            # user cancelled; never an error dialog
     status_update = pyqtSignal(str)
     reasoning_token = pyqtSignal(str, str)   # (stage, chunk)
     content_token = pyqtSignal(str, str)     # (stage, chunk)
@@ -196,13 +229,17 @@ class _AnalysisWorker(QThread):
             decision = record.stage2_decision or {}
         except Exception as exc:  # noqa: BLE001
             from pa_agent.ai.deepseek_client import CancelledError as _CancelledError
-            if isinstance(exc, _CancelledError):
-                logger.info("Analysis worker cancelled: %s", exc)
-            else:
-                logger.error("Analysis worker error: %s", exc, exc_info=True)
+
             decision = {}
             record = None  # type: ignore[assignment]
-            self.error_occurred.emit(str(exc))
+            if _is_cancellation(exc):
+                # A user cancel is not a failure: it must not raise the
+                # "分析过程发生程序异常" dialog nor reuse the error channel.
+                logger.info("Analysis worker cancelled: %s", exc)
+                self.cancelled.emit()
+            else:
+                logger.error("Analysis worker error: %s", exc, exc_info=True)
+                self.error_occurred.emit(str(exc))
 
         if record is not None:
             self.record_ready.emit(record)
@@ -679,7 +716,7 @@ class MainWindow(QMainWindow):
             return
 
         # Don't start if the data source hasn't connected yet
-        if not getattr(data_source, "_connected", False):
+        if not self._data_source_connected(data_source):
             logger.info("Data source not connected — RefreshLoop deferred.")
             self._status_bar.showMessage("数据源未连接，请检查网络后重启程序")
             return
@@ -862,7 +899,7 @@ class MainWindow(QMainWindow):
             logger.info(
                 "Analysis worker still running after %d ms cancel wait; "
                 "tracking as zombie",
-                _WORKER_JOIN_TIMEOUT_MS,
+                join_ms,
             )
             zombies = getattr(self, "_zombie_workers", None)
             if zombies is None:
@@ -890,7 +927,7 @@ class MainWindow(QMainWindow):
                     logger.warning(
                         "SnapshotFetchWorker did not finish within %d ms; "
                         "retaining it as a zombie; results will be ignored",
-                        _WORKER_JOIN_TIMEOUT_MS,
+                        join_ms,
                     )
                     self._zombie_snapshot_workers.append(sfw)
                     return
@@ -1081,7 +1118,7 @@ class MainWindow(QMainWindow):
         self._stop_refresh_loop()
         timeframe = self._tf_combo.currentText()
         ex_show = ex_val or "自动"
-        if data_source is not None and getattr(data_source, "_connected", False):
+        if data_source is not None and self._data_source_connected(data_source):
             try:
                 data_source.unsubscribe()
                 data_source.subscribe(sym_raw, timeframe)
@@ -1120,7 +1157,7 @@ class MainWindow(QMainWindow):
         current = self._symbol_combo.currentText().strip()
         kind = self._current_data_source_kind()
         symbols: list[str] = []
-        if data_source is not None and getattr(data_source, "_connected", False):
+        if data_source is not None and self._data_source_connected(data_source):
             try:
                 symbols = list(data_source.list_symbols())
             except Exception as exc:  # noqa: BLE001
@@ -1358,7 +1395,7 @@ class MainWindow(QMainWindow):
             label.hide()
             return
         data_source = getattr(self._ctx, "data_source", None)
-        if not getattr(data_source, "_connected", False):
+        if not self._data_source_connected(data_source):
             # Not being connected is the state users most need to know about —
             # hiding the alert here used to leave a dead submit button silent.
             if getattr(self, "_demo_mode", False):
@@ -1482,7 +1519,7 @@ class MainWindow(QMainWindow):
     def _on_fetch_data_clicked(self) -> None:
         """Start (or restart) continuous data refresh for the current symbol/timeframe."""
         data_source = getattr(self._ctx, "data_source", None)
-        if data_source is None or not getattr(data_source, "_connected", False):
+        if data_source is None or not self._data_source_connected(data_source):
             self._status_bar.showMessage("数据源未连接，请先切换数据来源")
             return
 
@@ -1490,8 +1527,8 @@ class MainWindow(QMainWindow):
         # If the user typed a new symbol/tf and clicked 「获取数据」, honour it.
         new_symbol = self._symbol_combo.currentText().strip()
         new_tf = self._tf_combo.currentText().strip()
-        cur_symbol = str(getattr(data_source, "_symbol", "") or "").strip()
-        cur_tf = str(getattr(data_source, "_timeframe", "") or "").strip()
+        cur_symbol = str(_source_attr(data_source, "symbol", "_symbol", "") or "").strip()
+        cur_tf = str(_source_attr(data_source, "timeframe", "_timeframe", "") or "").strip()
         if new_symbol and (new_symbol != cur_symbol or new_tf != cur_tf):
             # _on_symbol_or_tf_changed handles everything including starting the
             # refresh loop at the end, so we can return right away.
@@ -1528,7 +1565,7 @@ class MainWindow(QMainWindow):
             logger.debug("_ensure_refresh_loop_running：RefreshLoop 已在运行，无需重启")
             return  # already running — nothing to do
         data_source = getattr(self._ctx, "data_source", None)
-        if data_source is None or not getattr(data_source, "_connected", False):
+        if data_source is None or not self._data_source_connected(data_source):
             logger.warning(
                 "_ensure_refresh_loop_running：数据源未连接（data_source=%s connected=%s），"
                 "无法自动启动 RefreshLoop",
@@ -1624,9 +1661,7 @@ class MainWindow(QMainWindow):
         include_forming: bool | None = None,
     ) -> Any:
         """Build chart frame from the latest RefreshLoop snapshot (no separate buffer)."""
-        if not getattr(self._ctx, "data_source", None) or not getattr(
-            self._ctx.data_source, "_connected", False
-        ):
+        if not getattr(self._ctx, "data_source", None) or not self._data_source_connected():
             return None
         try:
             bars = self._bars_for_analysis_submit(self._analysis_bar_count())
@@ -1640,18 +1675,17 @@ class MainWindow(QMainWindow):
             return None
 
     def snapshot_klines_for_followup(self) -> str:
-        """Refresh chart once, freeze updates, return K-line table matching the chart."""
-        import time as _time
+        """Refresh chart once, freeze updates, return K-line table matching the chart.
 
+        This runs on the free-chat worker thread (see _make_kline_snapshot_fn),
+        so every Qt widget touch is marshalled back to the GUI thread: Qt objects
+        may only be created or updated from the thread that owns them.
+        """
         from pa_agent.ai.prompt_assembler import PromptAssembler
 
-        data_source = getattr(self._ctx, "data_source", None)
-        chart = getattr(self, "_chart_widget", None)
         display_frame = None
         export_frame = None
-        if getattr(self._ctx, "data_source", None) and getattr(
-            self._ctx.data_source, "_connected", False
-        ):
+        if getattr(self._ctx, "data_source", None) and self._data_source_connected():
             try:
                 bars = self._bars_for_analysis_submit(self._analysis_bar_count())
                 if bars:
@@ -1664,6 +1698,55 @@ class MainWindow(QMainWindow):
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Followup chart pull failed: %s", exc)
 
+        export_frame = self._apply_followup_chart_snapshot(display_frame, export_frame)
+        if export_frame is None:
+            return ""
+        return PromptAssembler._render_kline_table(export_frame)
+
+    def _apply_followup_chart_snapshot(self, display_frame: Any, export_frame: Any) -> Any:
+        """GUI-thread half of snapshot_klines_for_followup.
+
+        Runs inline when already on the GUI thread; otherwise the Qt work is
+        queued to the GUI thread and this call blocks until it completes.
+        """
+        from PyQt6.QtCore import QMetaObject, QThread, Qt
+
+        if QThread.currentThread() is self.thread():
+            return self._freeze_chart_for_followup(display_frame, export_frame)
+        self._followup_snapshot_args = (display_frame, export_frame)
+        self._followup_snapshot_return = None
+        try:
+            QMetaObject.invokeMethod(
+                self,
+                "_run_freeze_chart_for_followup",
+                Qt.ConnectionType.BlockingQueuedConnection,
+            )
+        except (RuntimeError, TypeError) as exc:  # pragma: no cover - shutdown race
+            logger.warning("Followup chart freeze could not reach the GUI thread: %s", exc)
+            self._followup_snapshot_args = None
+            return export_frame if export_frame is not None else display_frame
+        result = getattr(self, "_followup_snapshot_return", None)
+        self._followup_snapshot_args = None
+        self._followup_snapshot_return = None
+        return result
+
+    @pyqtSlot()
+    def _run_freeze_chart_for_followup(self) -> None:
+        """Qt slot wrapper: unpack args, run the GUI work, publish the result."""
+        args = getattr(self, "_followup_snapshot_args", None)
+        if args is None:
+            self._followup_snapshot_return = None
+            return
+        display_frame, export_frame = args
+        self._followup_snapshot_return = self._freeze_chart_for_followup(
+            display_frame, export_frame
+        )
+
+    def _freeze_chart_for_followup(self, display_frame: Any, export_frame: Any) -> Any:
+        """Freeze the chart on the frame that was just exported (GUI thread only)."""
+        import time as _time
+
+        chart = getattr(self, "_chart_widget", None)
         if display_frame is not None and chart is not None:
             from pa_agent.data.snapshot import frame_is_pure_closed, frames_equal_for_chart
 
@@ -1685,11 +1768,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_status_bar", None) is not None:
             self._status_bar.showMessage("追问：已刷新并冻结图表，K线与屏幕一致")
 
-        if export_frame is None:
-            export_frame = display_frame
-        if export_frame is None:
-            return ""
-        return PromptAssembler._render_kline_table(export_frame)
+        return export_frame if export_frame is not None else display_frame
 
     def _update_refresh_elapsed(self) -> None:
         """Update the 'distance from last refresh' label every second."""
@@ -1948,7 +2027,7 @@ class MainWindow(QMainWindow):
             # symbol/timeframe switch without requiring the user to click
             # "获取数据" again.
             data_source = getattr(self._ctx, "data_source", None)
-            if data_source is not None and getattr(data_source, "_connected", False):
+            if data_source is not None and self._data_source_connected(data_source):
                 self._start_refresh_loop()
 
             # Check for prior analysis record — if found, show a hint in the
@@ -2026,9 +2105,7 @@ class MainWindow(QMainWindow):
         """Snapshot newest forming bar ts_open for countdown display."""
         from pa_agent.data.bar_close_wait import current_forming_ts
 
-        if not getattr(self._ctx, "data_source", None) or not getattr(
-            self._ctx.data_source, "_connected", False
-        ):
+        if not getattr(self._ctx, "data_source", None) or not self._data_source_connected():
             return
         bars = self._last_frame_ready_bars or []
         ts = current_forming_ts(
@@ -2133,7 +2210,7 @@ class MainWindow(QMainWindow):
     ) -> bool:
         """Wait until bars[0] ts_open changes, then call _start_analysis."""
         data_source = getattr(self._ctx, "data_source", None)
-        if data_source is None or not getattr(data_source, "_connected", False):
+        if data_source is None or not self._data_source_connected(data_source):
             logger.warning("_arm_wait_for_bar_close：数据源未连接，放弃")
             self._status_bar.showMessage("数据源未连接")
             return False
@@ -2820,8 +2897,8 @@ class MainWindow(QMainWindow):
         if data_source is not None:
             new_symbol = self._symbol_combo.currentText().strip()
             new_tf = self._tf_combo.currentText().strip()
-            cur_symbol = str(getattr(data_source, "_symbol", "") or "").strip()
-            cur_tf = str(getattr(data_source, "_timeframe", "") or "").strip()
+            cur_symbol = str(_source_attr(data_source, "symbol", "_symbol", "") or "").strip()
+            cur_tf = str(_source_attr(data_source, "timeframe", "_timeframe", "") or "").strip()
             if new_symbol:
                 canon_symbol, canon_tf = self._canonical_user_input(
                     data_source, new_symbol, new_tf
@@ -2836,7 +2913,7 @@ class MainWindow(QMainWindow):
                     # again once data arrives.  Say so — the switch message
                     # alone looks like the button did nothing.
                     if (
-                        str(getattr(data_source, "_symbol", "") or "").strip()
+                        str(_source_attr(data_source, "symbol", "_symbol", "") or "").strip()
                         == canon_symbol
                     ):
                         self._status_bar.showMessage(
@@ -2939,7 +3016,7 @@ class MainWindow(QMainWindow):
         already destroyed.
         """
         data_source = getattr(self._ctx, "data_source", None)
-        if data_source is None or not getattr(data_source, "_connected", False):
+        if data_source is None or not self._data_source_connected(data_source):
             self._status_bar.showMessage("数据源未连接")
             return
 
@@ -3144,6 +3221,8 @@ class MainWindow(QMainWindow):
             incremental_new_bar_count=incremental_new_bar_count,
             parent=None,
         )
+        worker = self._worker
+
         def _on_worker_finished(decision: dict) -> None:
             if getattr(self, "_analysis_worker_id", None) is not worker_id:
                 return
@@ -3156,8 +3235,13 @@ class MainWindow(QMainWindow):
                 logger.exception("Analysis finished UI update failed: %s", exc)
             finally:
                 self._on_worker_done()
+                # The thread has delivered its last signal; release the C++
+                # object (and the KlineFrame it holds) instead of leaking one
+                # QThread per analysis.
+                worker.deleteLater()
 
         self._worker.record_ready.connect(self._on_record_ready)
+        self._worker.cancelled.connect(self._on_analysis_cancelled)
         self._worker.finished.connect(_on_worker_finished)
         self._worker.error_occurred.connect(self._on_analysis_error)
         self._worker.status_update.connect(self._on_status_update)
@@ -3385,11 +3469,13 @@ class MainWindow(QMainWindow):
             self._bind_decision_tree(decision, stage1_diag or None)
             order = inner.get("order_type", "—")
             self._decision_badge.setText(f"决策: {order}")
-            if self._maybe_alert_order_opportunity(inner):
-                self._spawn_post_order_followup(inner, decision)
-
-            elif getattr(self, "_demo_mode", False):
+            if getattr(self, "_demo_mode", False):
+                # Demo replay: never alert, never log/notify.  The replay is
+                # history, so writing it to the trade ledger or pushing it to
+                # Feishu/PushPlus would pollute real records.
                 self._present_decision_flow_playback(force_play=True)
+            elif self._maybe_alert_order_opportunity(inner):
+                self._spawn_post_order_followup(inner, decision)
 
             # ── FlowBar: mark Stage 2 done ────────────────────────────────────
             flow = getattr(self, "_flow_bar", None)
@@ -3625,6 +3711,16 @@ class MainWindow(QMainWindow):
         box.exec()
         if box.clickedButton() == btn_open:
             self._open_ai_model_settings_dialog()
+
+    def _on_analysis_cancelled(self) -> None:
+        """User pressed stop / switched symbol: reset state, no error dialog."""
+        if not self._ui_is_alive():
+            return
+        logger.info("分析已由用户取消")
+        try:
+            self._status_bar.showMessage("分析已取消")
+        except RuntimeError as exc:  # pragma: no cover - teardown race
+            logger.debug("status bar gone during cancel: %s", exc)
 
     def _on_analysis_error(self, message: str) -> None:
         """Unhandled exception in the analysis worker thread."""
@@ -3965,6 +4061,19 @@ class MainWindow(QMainWindow):
             elif flow_viz.should_auto_play_after_load():
                 self._present_decision_flow_playback(force_play=False)
 
+    def _track_shutdown_thread(self, thread: Any) -> None:
+        """Remember a fire-and-forget thread so closeEvent can wait for it.
+
+    The trade-record/notification worker appends a CSV row and sends a push;
+    leaving it running while the window is destroyed can truncate the record
+    or drop the notification mid-flight.
+    """
+        threads = getattr(self, "_shutdown_threads", None)
+        if threads is None:
+            threads = []
+            self._shutdown_threads = threads
+        threads.append(thread)
+
     def _order_opportunity_alert_enabled(self) -> bool:
         settings = self._ctx.settings
         if settings is None:
@@ -3987,8 +4096,16 @@ class MainWindow(QMainWindow):
         )
 
     def _spawn_post_order_followup(self, inner: dict, decision: dict) -> None:
-        """Run trade CSV/chart + notifications off the UI thread (can take seconds)."""
+        """Run trade CSV/chart + notifications off the UI thread (can take seconds).
+
+        Demo replay must never reach this path: it would append a replayed
+        (fake) signal to the real trade ledger and push it to Feishu/PushPlus.
+        """
         import threading
+
+        if getattr(self, "_demo_mode", False):
+            logger.info("Demo mode: skipping trade record + notifications")
+            return
 
         settings = getattr(self._ctx, "settings", None)
         model_name = ""
@@ -4061,11 +4178,13 @@ class MainWindow(QMainWindow):
             except Exception as exc:  # noqa: BLE001
                 logger.warning("下单信号通知失败（不影响主流程）: %s", exc)
 
-        threading.Thread(
+        thread = threading.Thread(
             target=_run,
             name="post-order-followup",
             daemon=True,
-        ).start()
+        )
+        self._track_shutdown_thread(thread)
+        thread.start()
 
     def _maybe_alert_order_opportunity(self, decision_inner: dict) -> bool:
         """Beep, popup, and focus decision tab when stage-2 proposes an order.
@@ -4163,16 +4282,45 @@ class MainWindow(QMainWindow):
             logger.debug("MainWindow UI torn down during worker cleanup: %s", exc)
 
     def closeEvent(self, event: QCloseEvent | None) -> None:
-        """Stop background work before Qt destroys widgets."""
+        """Stop background work before Qt destroys widgets.
+
+        A partial teardown (demo timer still ticking into deleted widgets,
+        ticker firing, notification thread mid-write) used to leak out of the
+        old ``except RuntimeError`` and could leave the window open.
+        """
         self._window_closing = True
+        try:
+            # Demo replay owns a QTimer parented to this window; leaving it
+            # running means callbacks into widgets that are being destroyed.
+            self._exit_demo_mode(silent=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Demo mode teardown failed: %s", exc)
+        try:
+            ticker = getattr(self, "_elapsed_ticker", None)
+            if ticker is not None:
+                ticker.stop()
+        except RuntimeError as exc:
+            logger.debug("Elapsed ticker already gone: %s", exc)
         try:
             self._cancel_analysis_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             self._cancel_analysis_prep_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             self._cancel_snapshot_fetch_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             self._stop_refresh_loop()
-        except RuntimeError as exc:
-            logger.debug("Shutdown cleanup skipped: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Shutdown cleanup skipped: %s", exc)
+        self._join_shutdown_threads()
         super().closeEvent(event)
+
+    def _join_shutdown_threads(self) -> None:
+        """Wait briefly for fire-and-forget workers (trade CSV / notifications)."""
+        threads = getattr(self, "_shutdown_threads", None) or []
+        for thread in threads:
+            try:
+                thread.join(timeout=2.0)
+            except RuntimeError as exc:  # pragma: no cover - defensive
+                logger.debug("Shutdown thread join skipped: %s", exc)
+        if threads:
+            self._shutdown_threads = []
 
     def showEvent(self, event: QShowEvent | None) -> None:
         """On first show, prompt for API Key when missing."""
@@ -4258,8 +4406,22 @@ class MainWindow(QMainWindow):
                 self._debug_widget._api_key = key
                 self._ai_sidebar.bind_settings(settings)
                 update_api_key(key)
+                # The writer and the log formatters snapshot credentials at
+                # construction time; a key edited here must reach all of them or
+                # the new key is written to pending records in plaintext.
+                self._sync_secret_consumers(settings)
             self._update_ai_mode_label()
             self._refresh_api_key_ui_state()
+
+    def _sync_secret_consumers(self, settings: Any) -> None:
+        """Push freshly saved credentials to every component that masks them."""
+        from pa_agent.util.logging import register_settings_secrets
+
+        register_settings_secrets(settings)
+        pending_writer = getattr(self._ctx, "pending_writer", None)
+        set_key = getattr(pending_writer, "set_api_key", None)
+        if callable(set_key):
+            set_key(getattr(settings.provider, "api_key", "") or "")
 
     def _open_feishu_settings_dialog(self) -> None:
         """打开飞书机器人设置对话框."""
@@ -4271,7 +4433,9 @@ class MainWindow(QMainWindow):
             settings = Settings()
 
         dlg = FeishuSettingsDialog(settings=settings, parent=self)
-        dlg.exec()
+        if dlg.exec():
+            # The webhook URL is the credential; keep it masked in logs too.
+            self._sync_secret_consumers(settings)
 
     def _open_general_settings_dialog(self) -> None:
         """打开通用设置对话框."""
@@ -4342,6 +4506,22 @@ class MainWindow(QMainWindow):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def _data_source_connected(self, data_source: Any = None) -> bool:
+        """Connection state of the active (or given) data source.
+
+        Prefers the public DataSource.is_connected contract and only falls back
+        to the private flag for duck-typed stubs; probing ``_connected`` alone
+        silently reported "not connected" for any source that named it
+        differently.
+        """
+        source = (
+            data_source if data_source is not None
+            else getattr(self._ctx, "data_source", None)
+        )
+        if source is None:
+            return False
+        return bool(_source_attr(source, "is_connected", "_connected", False))
+
     def _can_submit(self) -> bool:
         """Return True if the submit button should be enabled."""
         return self._submit_block_reason() is None
@@ -4353,7 +4533,7 @@ class MainWindow(QMainWindow):
         if self._demo_mode:
             return "演示模式中，请退出演示后再提交真实分析"
         data_source = getattr(self._ctx, "data_source", None)
-        if data_source is None or not getattr(data_source, "_connected", False):
+        if data_source is None or not self._data_source_connected(data_source):
             return "数据源未连接，请检查数据来源后点击「获取数据」重试"
         if self._analysis_in_progress:
             return "分析进行中"

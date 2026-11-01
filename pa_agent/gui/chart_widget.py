@@ -178,6 +178,14 @@ class ChartWidget(pg.PlotWidget):
 
         self._update_direction_marker()
 
+    def decision_overlay_items(self) -> list[pg.GraphicsItem]:
+        """Entry/TP/SL overlay items currently on the chart (empty when 不下单).
+
+        Support/resistance lines are deliberately excluded: they come from the
+        Stage-1 structure and exist regardless of the trade decision.
+        """
+        return list(self._overlay._items)  # noqa: SLF001 - single owner
+
     def clear_decision_overlay(self) -> None:
         """Remove entry/TP/SL lines and direction marker; keep the current K-line frame."""
         self._overlay.clear_lines(self)

@@ -139,3 +139,24 @@ class DataSource(ABC):
     def canonical_timeframe(self, timeframe: str) -> str:
         """Canonical form of user *timeframe* input for subscription comparison."""
         return (timeframe or "").strip()
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the source is connected and usable.
+
+        Public contract: the GUI used to probe the private ``_connected``
+        attribute with ``getattr(source, "_connected", False)``, so a new
+        source that named it differently would silently look disconnected.
+        Implementations may keep a private flag and override this.
+        """
+        return bool(getattr(self, "_connected", False))
+
+    @property
+    def symbol(self) -> str:
+        """Currently subscribed symbol ("" when not subscribed)."""
+        return str(getattr(self, "_symbol", "") or "")
+
+    @property
+    def timeframe(self) -> str:
+        """Currently subscribed timeframe ("" when not subscribed)."""
+        return str(getattr(self, "_timeframe", "") or "")
