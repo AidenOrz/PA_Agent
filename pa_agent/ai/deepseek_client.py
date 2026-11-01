@@ -144,22 +144,21 @@ def _is_deepseek_native(base_url: str) -> bool:
 def _is_deepseek_model(model: str) -> bool:
     """True for DeepSeek model ids; excludes QClaw ``openclaw`` and WorkBuddy ``openclaw_wb`` Agent aliases."""
     m = (model or "").lower()
-    if m in ("openclaw", "openclaw_wb", "openclaw_cs"):
+    if m in ("openclaw", "openclaw_wb"):
         return False
-    if m.startswith("openclaw/") or m.startswith("openclaw_wb/") or m.startswith("openclaw_cs/"):
+    if m.startswith("openclaw/") or m.startswith("openclaw_wb/"):
         return False
     return "deepseek" in m
 
 
 def _is_qclaw_openclaw_agent(settings: AIProviderSettings) -> bool:
     """True when requests go through QClaw's public-gateway OpenClaw Agent."""
-    from pa_agent.ai.cursor_connector import is_openclaw_cs_model
     from pa_agent.ai.qclaw_connector import detect_qclaw, is_openclaw_model
 
     if not detect_qclaw():
         return False
     model = settings.model or ""
-    return is_openclaw_model(model) or is_openclaw_cs_model(model)
+    return is_openclaw_model(model)
 
 
 def _openclaw_agent_request_extra(settings: AIProviderSettings) -> dict[str, Any]:
@@ -177,13 +176,12 @@ def _is_workbuddy_agent(settings: AIProviderSettings) -> bool:
 
 
 def _is_openclaw_agent_model(model: str) -> bool:
-    """True for QClaw/WorkBuddy/Cursor OpenClaw Agent model aliases."""
+    """True for QClaw/WorkBuddy OpenClaw Agent model aliases."""
     m = (model or "").lower()
     return (
-        m in ("openclaw", "openclaw_wb", "openclaw_cs")
+        m in ("openclaw", "openclaw_wb")
         or m.startswith("openclaw/")
         or m.startswith("openclaw_wb/")
-        or m.startswith("openclaw_cs/")
     )
 
 

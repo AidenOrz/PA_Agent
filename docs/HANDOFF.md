@@ -38,7 +38,7 @@
 | `tests/property/test_logs_have_no_plaintext_key.py`（1） | **根因未明**：日志文件为空（明文泄漏断言本身通过，失败在"掩码必须出现"断言，content 为空串）。疑与 configure_logging handler/flush 有关，需先诊断 `pa_agent/util/logging.py` | 先诊断再定：产品 bug 则报 bug，测试时序问题则修测试 |
 | `tests/unit/test_market_defaults.py`（1） | 黄金符号按场所映射过滤 probe plan（`market_defaults.py:220-224`，SP/NYSE 等不报现货黄金被有意跳过） | 期望改为黄金可用 6 场所；可加 EURUSD 用例 |
 | `tests/unit/test_order_opportunity.py`（1） | 产品新增 `SND_ASYNC` flag，FakeWinsound stub 缺该常量，AttributeError 被吞 | stub 补 `SND_ASYNC = 8` |
-| `tests/unit/test_provider_override_by_model.py`（1） | `apply_cursor_provider_to_settings` 重写为纯校验（`cursor_connector.py:68-89`），base_url 有意清空、不再走 QClaw 网关 | 重写为新语义：crsr_ key 校验、base_url=="" |
+| ~~`tests/unit/test_provider_override_by_model.py`（1）~~ **该测试已随 Cursor 通道整体删除而删掉** | `apply_cursor_provider_to_settings` 重写为纯校验（`cursor_connector.py:68-89`），base_url 有意清空、不再走 QClaw 网关 | 重写为新语义：crsr_ key 校验、base_url=="" |
 | `tests/e2e/`（4 个 smoke） | 未深挖（疑似与上述 fixture/接口变更同类）。**注意：e2e 测试疑似挂起**，单文件跑 5 分钟无结果，可能与真实网络/mock 缺失有关，修之前先查挂起原因 | 先单独诊断挂起，再逐个对齐 |
 
 ## 四、本轮修复后测试状态

@@ -44,7 +44,7 @@ def is_mimo_model(model: str) -> bool:
     m = (model or "").strip().lower()
     if not m:
         return False
-    if m.startswith(("openclaw", "openclaw_wb", "openclaw_cs")):
+    if m.startswith(("openclaw", "openclaw_wb")):
         return False
     return "mimo" in m
 

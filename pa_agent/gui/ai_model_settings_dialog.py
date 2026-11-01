@@ -21,10 +21,6 @@ from PyQt6.QtWidgets import (
 
 from pa_agent.config.settings import Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
-from pa_agent.ai.cursor_connector import (
-    is_openclaw_cs_model,
-    should_use_cursor_provider,
-)
 from pa_agent.ai.qclaw_connector import (
     detect_qclaw,
     is_openclaw_model,
@@ -140,13 +136,6 @@ class AIModelSettingsDialog(QDialog):
             if err:
                 QMessageBox.warning(self, "WorkBuddy 配置异常", err)
                 return
-        elif is_openclaw_cs_model(model) or should_use_cursor_provider(model, base_url):
-            # Cursor route must keep the user-provided Cursor API key (crsr_...).
-            p.api_key = api_key
-            err = self._apply_cursor_provider(preferred_model=model)
-            if err:
-                QMessageBox.warning(self, "Cursor 配置异常", err)
-                return
         elif is_openclaw_model(model) or should_use_qclaw_provider(model, base_url):
             p.api_key = api_key
             err = self._apply_qclaw_provider(preferred_model=model)
@@ -182,10 +171,6 @@ class AIModelSettingsDialog(QDialog):
             self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
             self._show_key_btn.setText("隐藏")
 
-    def _apply_cursor_provider(self, *, preferred_model: str = "") -> str | None:
-        from pa_agent.ai.cursor_connector import apply_cursor_provider_to_settings
-        return apply_cursor_provider_to_settings(self._settings, preferred_model=preferred_model or None)
-
     def _apply_qclaw_provider(self, *, preferred_model: str = "") -> str | None:
         from pa_agent.ai.qclaw_connector import apply_qclaw_provider_to_settings
         return apply_qclaw_provider_to_settings(self._settings, preferred_model=preferred_model or None)
@@ -196,8 +181,6 @@ class AIModelSettingsDialog(QDialog):
 
     @staticmethod
     def _validate_provider_fields(model: str, base_url: str) -> str | None:
-        if is_openclaw_cs_model(model) or should_use_cursor_provider(model, base_url):
-            return None
         if is_openclaw_model(model) or should_use_qclaw_provider(model, base_url):
             return None
         if is_openclaw_wb_model(model) or should_use_workbuddy_provider(model, base_url):
@@ -207,7 +190,6 @@ class AIModelSettingsDialog(QDialog):
                 "「模型」与「Base URL」似乎填反了：\n"
                 "• 模型应填模型名，如 deepseek-v4-pro 或 claude-sonnet-4-6\n"
                 "• 使用 QClaw 时模型填 openclaw（或 openclaw/main）\n"
-                "• 使用 Cursor 订阅时模型填 openclaw_cs\n"
                 "• 使用 WorkBuddy 时模型填 openclaw_wb\n"
                 "• Base URL 应填接口地址，如 https://api.deepseek.com"
             )
@@ -218,7 +200,6 @@ class AIModelSettingsDialog(QDialog):
                 return (
                     "请填写 Base URL，或使用 QClaw/WorkBuddy：\n"
                     "• 模型填 openclaw → QClaw\n"
-                    "• 模型填 openclaw_cs → Cursor 订阅（经 QClaw 网关）\n"
                     "• 模型填 openclaw_wb → WorkBuddy"
                 )
             if detect_workbuddy():
@@ -229,7 +210,6 @@ class AIModelSettingsDialog(QDialog):
             "DeepSeek 示例：https://api.deepseek.com\n"
             "PackyAPI 示例：https://www.packyapi.com/v1\n"
             "QClaw：模型填 openclaw 后点保存（自动配置本地网关）\n"
-            "Cursor：模型填 openclaw_cs 后点保存（经 QClaw 走 Cursor 订阅）\n"
             "WorkBuddy：模型填 openclaw_wb 后点保存（自动配置 WorkBuddy）"
         )
 

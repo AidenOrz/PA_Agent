@@ -1273,7 +1273,6 @@ class TwoStageOrchestrator:
             self._settings.provider.model if self._settings is not None else ""
         )
         tried_qclaw = False
-        tried_cursor = False
         tried_workbuddy = False
         while True:
             try:
@@ -1297,16 +1296,6 @@ class TwoStageOrchestrator:
                     tried_workbuddy = True
                     logger.info(
                         "%s network error (%s); applied WorkBuddy provider — retrying",
-                        stage_label,
-                        exc,
-                    )
-                elif not tried_cursor and self._try_cursor_fallback(
-                    original_model=original_model
-                ):
-                    self._fallback_used = True
-                    tried_cursor = True
-                    logger.info(
-                        "%s network error (%s); applied Cursor provider — retrying",
                         stage_label,
                         exc,
                     )
@@ -1354,37 +1343,6 @@ class TwoStageOrchestrator:
 
         logger.info(
             "QClaw auto-fallback: model=%s base_url=%s",
-            fallback_settings.provider.model,
-            fallback_settings.provider.base_url,
-        )
-        return True
-
-    def _try_cursor_fallback(self, *, original_model: str = "") -> bool:
-        """Apply Cursor route to a temporary settings copy."""
-        from pa_agent.ai.cursor_connector import (
-            apply_cursor_provider_to_settings,
-            is_openclaw_cs_model,
-        )
-        if not is_openclaw_cs_model(original_model):
-            return False
-        if self._settings is None:
-            return False
-
-        fallback_settings = self._temporary_fallback_settings()
-        if fallback_settings is None:
-            return False
-        err = apply_cursor_provider_to_settings(
-            fallback_settings,
-            preferred_model=original_model,
-        )
-        if err:
-            logger.warning("Cursor auto-fallback unavailable: %s", err)
-            return False
-
-        self._client.update_provider(fallback_settings.provider)
-
-        logger.info(
-            "Cursor auto-fallback: model=%s base_url=%s",
             fallback_settings.provider.model,
             fallback_settings.provider.base_url,
         )
