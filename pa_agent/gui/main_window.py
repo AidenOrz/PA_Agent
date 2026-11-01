@@ -990,10 +990,34 @@ class MainWindow(QMainWindow):
                 self._tf_combo.setCurrentText("1d")
 
     def _apply_tv_exchange_to_source(self, data_source: Any) -> None:
+        from pa_agent.data.market_defaults import sanitize_tv_exchange_for_symbol
         from pa_agent.data.tradingview import TradingViewSource
 
-        if isinstance(data_source, TradingViewSource):
-            data_source.set_exchange(self._tv_exchange_text())
+        if not isinstance(data_source, TradingViewSource):
+            return
+
+        chosen = self._tv_exchange_text()
+        symbol = self._symbol_combo.currentText().strip()
+        usable = sanitize_tv_exchange_for_symbol(chosen, symbol)
+        if usable != chosen:
+            # A six-digit A-share code is not listed on OANDA/NASDAQ, and a HK
+            # code is not listed outside HKEX. Keeping such a pair means every
+            # refresh waits a full socket timeout for a guaranteed empty reply,
+            # so fall back to auto-probe (which tries the right venue first and
+            # still reaches OANDA for gold) and store that decision — otherwise
+            # the bad pair is restored on the next start.
+            logger.info(
+                "TV exchange %r cannot serve %s; switching to auto-probe",
+                chosen or "自动",
+                symbol,
+            )
+            self._force_tv_exchange_auto()
+            self._status_bar.showMessage(
+                f"交易所 {chosen} 无法取到 {symbol} 的行情，已切回自动探测"
+            )
+            self._persist_tradingview_exchange()
+            usable = ""
+        data_source.set_exchange(usable)
 
     def _on_tv_probe_status(self, symbol: str, exchange: str, label: str) -> None:
         """Callback from TradingViewSource auto-probe: show current exchange being tried.
@@ -1015,7 +1039,18 @@ class MainWindow(QMainWindow):
         settings = getattr(self._ctx, "settings", None)
         if settings is None:
             return
-        settings.general.last_tradingview_exchange = self._tv_exchange_text()
+        from pa_agent.data.market_defaults import sanitize_tv_exchange_for_symbol
+
+        symbol = (
+            self._symbol_combo.currentText().strip()
+            if hasattr(self, "_symbol_combo")
+            else ""
+        )
+        # Never store a pair that provably cannot return bars; the value is
+        # restored verbatim at the next data-source switch.
+        settings.general.last_tradingview_exchange = sanitize_tv_exchange_for_symbol(
+            self._tv_exchange_text(), symbol
+        )
         try:
             from pa_agent.config.settings import save_settings
 
@@ -1209,6 +1244,11 @@ class MainWindow(QMainWindow):
                 saved_ex = ""
                 if settings is not None:
                     saved_ex = getattr(settings.general, 'last_tradingview_exchange', '') or ''
+                from pa_agent.data.market_defaults import sanitize_tv_exchange_for_symbol
+
+                saved_ex = sanitize_tv_exchange_for_symbol(
+                    saved_ex, self._symbol_combo.currentText().strip()
+                )
                 idx = self._tv_exchange_combo.findData(saved_ex)
                 if idx < 0:
                     idx = self._tv_exchange_combo.findData("")
@@ -1814,7 +1854,7 @@ class MainWindow(QMainWindow):
             hint = (
                 "请输入至少 2 个字的股票名称"
                 if is_tv_name_input(new_symbol)
-                else "请输入完整代码（A 股 6 位如 600519，港股如 1810）"
+                else "请输入完整代码（A 股 6 位如 600519，港股如 1810，美股如 AAPL）"
             )
             self._status_bar.showMessage(f"{hint} — 当前：{new_symbol.strip()}")
             self._update_symbol_data_alert()

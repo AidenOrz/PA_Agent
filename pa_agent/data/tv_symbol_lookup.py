@@ -132,20 +132,46 @@ def reload_tv_symbol_aliases() -> None:
 
 
 def is_tv_name_input(symbol: str) -> bool:
-    """True when input looks like a name rather than a numeric/gold ticker."""
+    """True when input is a company name (Chinese text), not a ticker symbol.
+
+    English input is always a ticker, whatever its case: "aapl" and "APPL"
+    mean the same request.  The old rule ("all-lowercase English with >= 3
+    chars is a company name") made "appl" probe seven forex venues before
+    NASDAQ and contradicted the case-insensitive alias table, so it is gone.
+    Known English aliases are matched by lookup_tv_symbol_alias() instead.
+    """
     s = (symbol or "").strip()
-    if not s or s.isdigit():
+    if not s:
         return False
-    upper = s.upper()
-    if upper in ("XAUUSD", "GOLD", "XAGUSD", "EURUSD", "GBPUSD"):
+    return bool(re.search(r"[\u4e00-\u9fff]", s))
+
+
+def lookup_tv_symbol_alias(symbol: str) -> tuple[str, str] | None:
+    """Exact alias-table hit (case/suffix/space insensitive); no fuzzy match.
+
+    Unlike lookup_tv_symbol_by_name() this accepts tickers too, so "xiaomi"
+    and "XIAOMI" still map to HKEX:1810 while "aapl", absent from the table,
+    keeps its plain ticker meaning.
+    """
+    key = _normalize_name_key(symbol)
+    if not key:
+        return None
+    return _all_aliases().get(key)
+
+
+def is_tv_alias_input(symbol: str) -> bool:
+    """True when input may name a row in the alias table.
+
+    Chinese text and all-lowercase ASCII ("xiaomi", "bili") qualify; an
+    uppercase ticker ("BILI", "NIO") does not, so an explicit exchange plus a
+    plain ticker is never overridden by an alias row.
+    """
+    s = (symbol or "").strip()
+    if not s:
         return False
-    # Only all-lowercase English is likely a name (e.g. "xiaomi");
-    # uppercase / mixed-case short strings are ticker symbols (e.g. "SPX", "NDX").
-    if re.fullmatch(r"[a-z0-9.\-]+", s) and any(c.isalpha() for c in s):
-        return len(s) >= 3
-    if re.search(r"[\u4e00-\u9fff]", s):
+    if is_tv_name_input(s):
         return True
-    return False
+    return bool(re.fullmatch(r"[a-z0-9.\-]+", s)) and any(c.isalpha() for c in s)
 
 
 def lookup_tv_symbol_by_name(name: str) -> tuple[str, str] | None:

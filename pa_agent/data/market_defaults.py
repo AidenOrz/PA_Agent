@@ -76,6 +76,10 @@ _KNOWN_INDEX_TICKERS: dict[str, list[tuple[str, str]]] = {
 
 # tvDatafeed exchange ids for China A-shares / Hong Kong (TradingView)
 TV_ASHARE_EXCHANGES: frozenset[str] = frozenset({"SSE", "SZSE"})
+# User-typed spellings that mean the same venues.
+TV_ASHARE_EXCHANGE_ALIASES: frozenset[str] = TV_ASHARE_EXCHANGES | frozenset(
+    {"SH", "SZ", "SHSE", "XSHE", "SHANGHAI", "SHENZHEN"}
+)
 TV_HK_EXCHANGE = "HKEX"
 TV_HK_EXCHANGES: frozenset[str] = frozenset({TV_HK_EXCHANGE, "HK", "HKG", "HONGKONG"})
 TV_EQUITY_EXCHANGES: frozenset[str] = TV_ASHARE_EXCHANGES | TV_HK_EXCHANGES
@@ -166,6 +170,10 @@ def is_partial_tv_symbol_input(symbol: str) -> bool:
     if is_tv_name_input(s):
         key = re.sub(r"\s+", "", s)
         return len(key) < 2
+    if re.fullmatch(r"[A-Za-z0-9.\-]+", s) and any(c.isalpha() for c in s):
+        # English tickers: a single character is still ambiguous typing
+        # ("A" / "F"); two or more are accepted as-is, whatever the case.
+        return len(s) < 2
     if s.isdigit():
         if len(s) < 3:
             return True
@@ -196,6 +204,48 @@ def infer_ashare_tv_exchange(code: str) -> str:
     if code.startswith("000"):
         return "SZSE"
     return "SSE"
+
+
+def _tv_alias_lookup(symbol: str) -> tuple[str, str] | None:
+    """Alias-table lookup that also serves plain lowercase tickers.
+
+    Chinese names use the fuzzy lookup; ASCII input uses an exact alias match
+    so "xiaomi"/"bili" still resolve while "aapl" keeps its ticker meaning.
+    """
+    from pa_agent.data.tv_symbol_lookup import (
+        is_tv_alias_input,
+        is_tv_name_input,
+        lookup_tv_symbol_alias,
+        lookup_tv_symbol_by_name,
+    )
+
+    if is_tv_name_input(symbol):
+        return lookup_tv_symbol_by_name(symbol)
+    if is_tv_alias_input(symbol):
+        return lookup_tv_symbol_alias(symbol)
+    return None
+
+
+def sanitize_tv_exchange_for_symbol(exchange: str, symbol: str) -> str:
+    """Return an exchange that can actually serve *symbol*; "" means auto.
+
+    A six-digit A-share code only exists on SSE/SZSE, and a one-to-five digit
+    HK code only on HKEX. Any other venue (OANDA, NASDAQ, ...) answers with
+    critical_error + no bars, and tvDatafeed then blocks for one WebSocket
+    timeout per attempt — so such a pair is downgraded to auto-probe instead
+    of being sent. Unknown venues for non-numeric symbols are left untouched.
+    """
+    ex = (exchange or "").strip().upper()
+    if is_tv_exchange_auto(ex):
+        return ""
+    sym = (symbol or "").strip()
+    code = normalize_ashare_tv_code(sym)
+    if _is_ashare_tv_code(code):
+        return ex if ex in TV_ASHARE_EXCHANGE_ALIASES else ""
+    hk = normalize_hk_tv_code(sym)
+    if _is_hk_tv_code(hk):
+        return ex if ex in TV_HK_EXCHANGES else ""
+    return ex
 
 
 def is_tv_exchange_auto(exchange: str) -> bool:
@@ -240,19 +290,19 @@ def tv_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
 
 def equity_tv_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
     """Ordered (exchange, symbol) attempts for auto-detect equity feeds."""
-    from pa_agent.data.tv_symbol_lookup import lookup_tv_symbol_by_name, is_tv_name_input
 
     # 1. Known index tickers (SPX, NDX, VIX, futures, etc.)
     upper = (symbol or "").strip().upper()
     if upper in _KNOWN_INDEX_TICKERS:
         return _KNOWN_INDEX_TICKERS[upper]
 
-    # 2. Company name lookup (Chinese or lowercase English)
-    if is_tv_name_input(symbol):
-        hit = lookup_tv_symbol_by_name(symbol)
-        if hit is not None:
-            return [hit]
-        return []
+    # 2. Alias table: Chinese company names (fuzzy) and lowercase English
+    #    aliases such as "xiaomi" / "bili". A lowercase ticker with no alias
+    #    row ("aapl") misses here and continues as a plain ticker below, so
+    #    "aapl" and "AAPL" behave identically.
+    hit = _tv_alias_lookup(symbol)
+    if hit is not None:
+        return [hit]
 
     # 3. A-share numeric codes
     code_a = normalize_ashare_tv_code(symbol)
@@ -303,15 +353,13 @@ def is_hk_tv_request(exchange: str, symbol: str) -> bool:
 def is_ashare_tv_request(exchange: str, symbol: str) -> bool:
     """True when the user intends an A-share feed on TradingView."""
     ex = (exchange or "").strip().upper()
-    if ex in TV_ASHARE_EXCHANGES or ex in {"SH", "SZ", "SHSE", "XSHE", "SHANGHAI", "SHENZHEN"}:
+    if ex in TV_ASHARE_EXCHANGE_ALIASES:
         return True
     return _is_ashare_tv_code(normalize_ashare_tv_code(symbol))
 
 
 def is_equity_tv_request(exchange: str, symbol: str) -> bool:
-    from pa_agent.data.tv_symbol_lookup import is_tv_name_input
-
-    if is_tv_name_input(symbol):
+    if _tv_alias_lookup(symbol) is not None:
         return True
     return is_ashare_tv_request(exchange, symbol) or is_hk_tv_request(exchange, symbol)
 
@@ -372,20 +420,14 @@ def resolve_tv_fetch_pair(exchange: str, symbol: str) -> tuple[str, str]:
     Does not rewrite the user's symbol/exchange in the UI. Name lookup is used
     only for the API call when the user typed a company name.
     """
-    from pa_agent.data.tv_symbol_lookup import (
-        is_tv_name_input,
-        lookup_tv_symbol_by_name,
-    )
-
     ex = (exchange or "").strip().upper()
     sym = (symbol or "").strip()
     if is_tv_exchange_auto(ex):
         return "", sym
-    if is_tv_name_input(sym):
-        hit = lookup_tv_symbol_by_name(sym)
-        if hit is not None:
-            return hit
-        # Name lookup failed — fall through to ticker path
+    hit = _tv_alias_lookup(sym)
+    if hit is not None:
+        return hit
+    # Alias lookup missed — fall through to the ticker path.
     return ex, sym
 
 
@@ -394,21 +436,15 @@ def resolve_tv_pair(
     symbol: str,
 ) -> tuple[str, str, bool]:
     """Resolve TradingView exchange/symbol for names, A/HK shares, indices, or gold/forex."""
-    from pa_agent.data.tv_symbol_lookup import (
-        is_tv_name_input,
-        lookup_tv_symbol_by_name,
-    )
-
     sym = (symbol or "").strip()
     ex_in = (exchange or "").strip().upper()
 
-    # 1. Company name lookup (Chinese or lowercase English)
-    if is_tv_name_input(sym):
-        hit = lookup_tv_symbol_by_name(sym)
-        if hit is not None:
-            ex_res, code = hit
-            return ex_res, code, True
-        # Name lookup failed — fall through
+    # 1. Alias table: Chinese names plus lowercase English aliases.
+    hit = _tv_alias_lookup(sym)
+    if hit is not None:
+        ex_res, code = hit
+        return ex_res, code, True
+    # Alias lookup missed — fall through
 
     # 2. Known index tickers (SPX, NDX, VIX, futures, etc.)
     upper = sym.upper()
@@ -441,7 +477,15 @@ def resolve_tv_pair(
             return hint_ex, upper, True
         return ex_in, upper, False
 
-    # 6. Gold / forex fallback
+    # 6. Plain tickers (AAPL, TSLA, 0700 up to five letters). Without this
+    #    step a valid ticker falls through to the gold fallback, which rewrites
+    #    NASDAQ+AAPL into OANDA+XAUUSD and silently swaps the user's chart.
+    if re.fullmatch(r"[A-Za-z]{1,5}", upper) and upper not in _GOLD_TV_SYMBOLS:
+        if is_tv_exchange_auto(ex_in):
+            return "", sym, False
+        return ex_in, sym, False
+
+    # 7. Gold / forex fallback
     return resolve_tv_gold_pair(exchange, symbol)
 
 

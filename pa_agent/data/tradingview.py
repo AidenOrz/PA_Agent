@@ -17,9 +17,10 @@ from pa_agent.data.datetime_ts import datetime_to_ts_ms
 from pa_agent.data.market_defaults import (
     is_tv_exchange_auto,
     resolve_tv_fetch_pair,
+    sanitize_tv_exchange_for_symbol,
     tv_auto_probe_plan,
 )
-from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError, is_tv_name_input
+from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError
 from pa_agent.data.tradingview_errors import format_tradingview_fetch_error
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,14 @@ logger = logging.getLogger(__name__)
 _TV_FETCH_RETRIES = 1
 _TV_FETCH_RETRY_SLEEP_S = 0.5
 
-# Override tvDatafeed's hardcoded 15s WebSocket timeout. Once the socket leak
-# (see _close_tv_socket) is fixed, healthy fetches complete in 1-3s, so this
-# only bounds the worst case on a stalled connection.
-_TV_WS_TIMEOUT_S = 10.0
+# Override tvDatafeed's WebSocket timeout (upstream default: 5s, see
+# tvDatafeed/main.py __ws_timeout). Healthy fetches complete in 0.4-0.6s, so a
+# short bound costs nothing when the venue is right. It matters a lot when it
+# is wrong: a bad pair (000001 on NASDAQ, 600519 on OANDA) gets critical_error
+# and no bars, and tvDatafeed then drains ~5 socket reads before giving up, so
+# one failed fetch costs about 5x this value. 3s keeps that worst case near 15s
+# instead of the ~50s a 10s timeout produced.
+_TV_WS_TIMEOUT_S = 3.0
 
 # Name-mangled attribute tvDatafeed uses internally for its socket timeout.
 _TV_WS_TIMEOUT_ATTR = "_TvDatafeed__ws_timeout"
@@ -520,7 +525,18 @@ class TradingViewSource(DataSource):
             raise DataSourceTransientError("TradingView 未订阅品种/周期")
 
         user_symbol = self._symbol
-        req_exchange = self._exchange
+        raw_exchange = (self._exchange or "").strip().upper()
+        # A venue that cannot serve this symbol (000001 on NASDAQ, 600519 on
+        # OANDA) answers with critical_error and no bars, and each attempt
+        # costs a full socket timeout. Downgrade such a pair to auto-probe so
+        # the request is routed to a venue that actually lists the symbol.
+        req_exchange = sanitize_tv_exchange_for_symbol(raw_exchange, user_symbol)
+        if raw_exchange and not is_tv_exchange_auto(raw_exchange) and req_exchange != raw_exchange:
+            logger.info(
+                "TradingView exchange %s cannot serve %s; using auto-probe",
+                raw_exchange,
+                user_symbol,
+            )
         exchange = req_exchange or ""
         fetch_symbol = user_symbol
         auto_probe = is_tv_exchange_auto(req_exchange)

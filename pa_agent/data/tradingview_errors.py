@@ -1,6 +1,8 @@
 """User-facing Chinese messages for TradingView / tvdatafeed failures."""
 from __future__ import annotations
 
+import re
+
 from pa_agent.data.market_defaults import (
     TV_HK_EXCHANGE,
     infer_ashare_tv_exchange,
@@ -10,6 +12,8 @@ from pa_agent.data.market_defaults import (
     normalize_hk_tv_code,
 )
 from pa_agent.data.tv_symbol_lookup import is_tv_name_input
+
+_GOLD_NAMES = frozenset({"XAUUSD", "GOLD", "XAU", "XAGUSD"})
 
 
 def format_tradingview_fetch_error(
@@ -83,6 +87,12 @@ def format_tradingview_fetch_error(
             return (
                 f"TradingView 无数据（名称 {sym}）："
                 "请改用代码，或在 config/tv_symbol_aliases.json 添加别名"
+            )
+        if re.fullmatch(r"[A-Za-z]{1,5}", sym) and sym not in _GOLD_NAMES:
+            return (
+                f"TradingView 无数据（{ex} / {sym}）："
+                f"{ex} 无此代码，美股请用 NASDAQ/NYSE + 代码（如 NASDAQ:AAPL），"
+                "或把交易所改为「自动」"
             )
         hint = "OANDA + XAUUSD"
         if ex == "TVC":
