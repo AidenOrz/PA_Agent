@@ -97,6 +97,17 @@ def ashare_trading_day(now: datetime | None = None) -> bool:
     return 9 * 60 + 30 <= t < 15 * 60
 
 
+def ashare_is_forming_bar(timeframe: str, now: datetime | None = None) -> bool:
+    """Whether snapshot index-0 is a still-forming bar (single source of truth).
+
+    Mirrors ashare_head_bar_live but is used by is_bar_still_forming, so the
+    wall-clock check and the data-source closed flag never disagree. Daily bars
+    stay live through the lunch break until 15:00; intraday bars only live
+    during the continuous sessions.
+    """
+    return ashare_head_bar_live(timeframe, now)
+
+
 def ashare_head_bar_live(timeframe: str, now: datetime | None = None) -> bool:
     """Whether snapshot index-0 should be marked unclosed (forming/live).
 
@@ -403,6 +414,7 @@ _cn_now = cn_now
 _ashare_session_open = ashare_session_open
 _ashare_trading_day = ashare_trading_day
 _ashare_head_bar_live = ashare_head_bar_live
+_ashare_is_forming_bar = ashare_is_forming_bar
 _row_time_to_ts_ms = row_time_to_ts_ms
 _df_to_bars_asc = df_to_bars_asc
 _normalize_ohlcv_df = normalize_ohlcv_df

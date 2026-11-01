@@ -104,13 +104,16 @@ def _cn_now() -> datetime:
 
 def _ashare_session_open(now: datetime | None = None) -> bool:
     """True during A-share cash session (Mon–Fri, 09:30–11:30 & 13:00–15:00 CN)."""
-    now = now or _cn_now()
-    if now.weekday() >= 5:
-        return False
-    t = now.hour * 60 + now.minute
-    morning = 9 * 60 + 30 <= t < 11 * 60 + 30
-    afternoon = 13 * 60 <= t < 15 * 60
-    return morning or afternoon
+    from pa_agent.data.ashare_common import ashare_session_open
+
+    return ashare_session_open(now)
+
+
+def _ashare_head_bar_live(timeframe: str, now: datetime | None = None) -> bool:
+    """Whether index-0 should stay unclosed (daily bars live through lunch)."""
+    from pa_agent.data.ashare_common import ashare_head_bar_live
+
+    return ashare_head_bar_live(timeframe, now)
 
 
 def _row_time_to_ts_ms(value: Any) -> int:
@@ -334,12 +337,16 @@ class AkShareSource(DataSource):
                 f"AkShare 未返回数据: {self._symbol} {self._timeframe}"
             )
 
+        # Daily bars must keep the same live/closed boundary as the other A-share
+        # sources (through the lunch break until 15:00); intraday bars only refresh
+        # during the continuous sessions.
+        head_live = _ashare_head_bar_live(self._timeframe)
         if _ashare_session_open():
             self._apply_spot_to_forming(rows_asc)
 
         rows_newest = list(reversed(rows_asc[-fetch_n:]))
         for i, row in enumerate(rows_newest):
-            row["closed"] = not (i == 0 and _ashare_session_open())
+            row["closed"] = not (i == 0 and head_live)
 
         return _rows_to_kline_bars(rows_newest, n)
 

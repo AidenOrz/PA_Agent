@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from pa_agent.data.base import KlineBar
@@ -61,6 +61,38 @@ def _calendar_month_close_ms(ts_open_ms: int | float) -> int:
     return int(close.timestamp() * 1000)
 
 
+def _calendar_week_close_ms(ts_open_ms: int | float) -> int:
+    """Return the end of the ISO week the bar opened in (Saturday 00:00 CN).
+
+    A weekly bar opens on Monday and stops changing when the market closes on
+    Friday; the weekend is not part of the bar.  Using ``7 * 86400`` would keep
+    the bar "forming" for two extra days and drop a finished weekly bar from
+    the analysis frame.
+    """
+    opened = datetime.fromtimestamp(float(ts_open_ms) / 1000.0, tz=_CN_TZ)
+    # Friday (weekday 4) 15:00 CN is the last moment the weekly bar can change.
+    days_to_friday = 4 - opened.weekday()
+    if days_to_friday < 0:
+        days_to_friday += 7
+    friday = (opened + timedelta(days=days_to_friday)).replace(
+        hour=15, minute=0, second=0, microsecond=0
+    )
+    return int(friday.timestamp() * 1000)
+
+
+def _bar_close_ms(ts_open_ms: int | float, timeframe: str) -> int | None:
+    """Wall-clock close of the bar that opened at ``ts_open_ms`` (None if unknown)."""
+    tf = str(timeframe or "").strip()
+    if tf == "1M":
+        return _calendar_month_close_ms(ts_open_ms)
+    if tf.lower() == "1w":
+        return _calendar_week_close_ms(ts_open_ms)
+    duration_s = timeframe_to_seconds(tf)
+    if duration_s is None:
+        return None
+    return int(ts_open_ms) + duration_s * 1000
+
+
 def seconds_until_bar_closes(
     ts_open_ms: int,
     timeframe: str,
@@ -69,10 +101,13 @@ def seconds_until_bar_closes(
 ) -> int | None:
     """Whole seconds until the bar that opened at ``ts_open_ms`` closes."""
     tf = str(timeframe or "").strip()
-    if tf == "1M":
+    if tf == "1M" or tf.lower() == "1w":
         if now_ms is None:
             now_ms = int(time.time() * 1000)
-        remaining_ms = _calendar_month_close_ms(ts_open_ms) - int(now_ms)
+        close_ms = _bar_close_ms(ts_open_ms, tf)
+        if close_ms is None:
+            return None
+        remaining_ms = close_ms - int(now_ms)
         return max(0, int(math.ceil(remaining_ms / 1000)))
     duration_s = timeframe_to_seconds(timeframe)
     if duration_s is None:
@@ -153,40 +188,33 @@ def is_bar_still_forming(
         now_ms = int(time.time() * 1000)
     tf = str(timeframe or "").strip()
     tf_lower = tf.lower()
-    if tf_lower == "1d" and _looks_like_ashare_symbol(symbol):
-        try:
-            from pa_agent.data.akshare_source import _ashare_session_open
+    if _looks_like_ashare_symbol(symbol):
+        # Daily/weekly/monthly A-share bars stay forming through the lunch
+        # break; intraday bars only during the continuous sessions.  Sharing
+        # one predicate with the data sources keeps a 11:30-13:00 snapshot
+        # from being handed to the AI as a closed bar.
+        from pa_agent.data.ashare_common import ashare_is_forming_bar, cn_now
 
-            if not _ashare_session_open():
-                return False
-        except ImportError:
-            pass
-    duration_s = timeframe_to_seconds(timeframe)
+        probe_tf = "1d" if (tf_lower == "1d" or tf == "1M" or tf_lower == "1w") else tf
+        session_now = datetime.fromtimestamp(int(now_ms) / 1000.0, tz=cn_now().tzinfo)
+        if not ashare_is_forming_bar(probe_tf, session_now):
+            return False
     from pa_agent.data.datetime_ts import ts_open_to_ms
 
     ts_open = int(ts_open_to_ms(bar.ts_open))
-    if tf == "1M":
-        close_ms = _calendar_month_close_ms(ts_open)
-        if int(now_ms) >= close_ms:
-            return False
-        # A stale broker clock must not keep a completed monthly bar open.
-        local_ms = int(time.time() * 1000)
-        if local_ms >= close_ms + 6 * 3600 * 1000:
-            return False
+    close_ms = _bar_close_ms(ts_open, tf)
+    if close_ms is None:
         return True
-    if duration_s is None:
-        return True
-    close_ms = ts_open + duration_s * 1000
 
     # Primary check: use the provided now_ms (broker or local time).
     if int(now_ms) >= close_ms:
         return False
 
-    # Safety net for daily/weekly bars: broker server time may be stale (no
-    # ticks during weekend / halt), causing now_ms to lag behind real time.
-    # If local wall-clock time is more than duration + 6 h past ts_open,
-    # the bar has definitely closed regardless of broker time.
-    if tf_lower in ("1d", "1w"):
+    # Safety net for daily/weekly/monthly bars: broker server time may be stale
+    # (no ticks during weekend / halt), causing now_ms to lag behind real time.
+    # If local wall-clock time is more than 6 h past the close, the bar has
+    # definitely closed regardless of broker time.
+    if tf_lower in ("1d", "1w") or tf == "1M":
         local_ms = int(time.time() * 1000)
         # 6 h safety margin covers all known broker UTC offsets (UTC-5 to UTC+5).
         safety_ms = 6 * 3600 * 1000

@@ -133,3 +133,54 @@ def test_active_intraday_bar_still_forming() -> None:
     head = _bar(ts_open)
     assert is_bar_still_forming(head, "15m", now_ms=now_ms)
     assert has_forming_bar_at_head([head], "15m", now_ms=now_ms)
+
+
+def test_weekly_bar_closes_on_friday_not_next_monday(monkeypatch) -> None:
+    """1w must use the ISO-week last trading day, not ts_open + 7 days."""
+    cn_tz = ZoneInfo("Asia/Shanghai")
+    monday = datetime(2024, 6, 3, 0, 0, tzinfo=cn_tz)  # Monday
+    ts_open = int(monday.timestamp() * 1000)
+    friday_close = datetime(2024, 6, 7, 15, 0, tzinfo=cn_tz)
+    saturday = datetime(2024, 6, 8, 0, 0, tzinfo=cn_tz)
+    # The 6h safety net reads the real wall clock; pin it to the scenario.
+    monkeypatch.setattr(
+        "pa_agent.data.bar_close_wait.time.time",
+        lambda: friday_close.timestamp() - 60,
+    )
+    # Still forming one minute before Friday close.
+    assert is_bar_still_forming(
+        _bar(ts_open), "1w", now_ms=int(friday_close.timestamp() * 1000) - 60_000
+    )
+    assert not is_bar_still_forming(
+        _bar(ts_open), "1w", now_ms=int(friday_close.timestamp() * 1000)
+    )
+    # 7*86400 would still call the bar forming on Saturday; the calendar
+    # rule must not.
+    assert not is_bar_still_forming(
+        _bar(ts_open), "1w", now_ms=int(saturday.timestamp() * 1000)
+    )
+    assert seconds_until_bar_closes(
+        ts_open, "1w", now_ms=int(friday_close.timestamp() * 1000)
+    ) == 0
+    assert seconds_until_bar_closes(
+        ts_open, "1w", now_ms=int(friday_close.timestamp() * 1000) - 60_000
+    ) == 60
+
+
+def test_ashare_daily_bar_stays_forming_through_lunch(monkeypatch) -> None:
+    """11:30-13:00 lunch break must not mark the daily bar closed."""
+    cn_tz = ZoneInfo("Asia/Shanghai")
+    ts_open = int(datetime(2024, 6, 3, 0, 0, tzinfo=cn_tz).timestamp() * 1000)
+    lunch = datetime(2024, 6, 3, 12, 0, tzinfo=cn_tz)
+    after_close = datetime(2024, 6, 4, 16, 0, tzinfo=cn_tz)
+    monkeypatch.setattr(
+        "pa_agent.data.bar_close_wait.time.time",
+        lambda: lunch.timestamp(),
+    )
+    bar = _bar(ts_open)
+    assert is_bar_still_forming(
+        bar, "1d", now_ms=int(lunch.timestamp() * 1000), symbol="600519"
+    )
+    assert not is_bar_still_forming(
+        bar, "1d", now_ms=int(after_close.timestamp() * 1000), symbol="600519"
+    )

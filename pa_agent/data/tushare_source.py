@@ -16,6 +16,7 @@ from pa_agent.data.base import (
     KlineBar,
     normalize_kline_bar,
 )
+from pa_agent.data.bar_close_wait import timeframe_to_seconds
 from pa_agent.data.kline_adjust import get_kline_adjust
 from pa_agent.data.market_defaults import TV_SSE_INDEX_CODES
 
@@ -45,8 +46,18 @@ _PRESET_SYMBOLS: tuple[str, ...] = (
     "000300",  # 沪深300
 )
 _TS_CODE_RE = re.compile(r"^\d{6}\.(SH|SZ|BJ)$", re.IGNORECASE)
+# Cache TTLs.  The cache only exists to respect the Tushare rate limit for
+# expensive history calls; it must never make a live chart stale.  Minute
+# feeds refresh at least once a minute, daily feeds every 5 minutes.
 _DAILY_CACHE_TTL_S = 300.0
-_MINUTE_CACHE_TTL_S = 3600.0
+_MINUTE_CACHE_TTL_S: dict[str, float] = {
+    "1m": 15.0,
+    "5m": 30.0,
+    "15m": 60.0,
+    "30m": 120.0,
+    "1h": 180.0,
+}
+_DEFAULT_MINUTE_CACHE_TTL_S = 60.0
 
 
 def normalize_tushare_symbol(symbol: str) -> str:
@@ -119,7 +130,37 @@ def _number(row: Any, key: str, default: float = 0.0) -> float:
     return float(value)
 
 
-def _df_to_bars_newest_first(df: Any, n: int) -> list[KlineBar]:
+def _ts_open_of(row: Any, time_col: str) -> int:
+    return (
+        _trade_time_to_ts_ms(row[time_col])
+        if time_col == "trade_time"
+        else _trade_date_to_ts_ms(row[time_col])
+    )
+
+
+def _head_bar_still_forming(ts_open_ms: int, timeframe: str, now_ms: int) -> bool:
+    """Whether the newest row is a bar the exchange is still filling.
+
+    Tushare returns the in-progress bar for intraday feeds and for the current
+    trading day on daily feeds.  Those must not be flagged ``closed``:
+    ``is_bar_still_forming`` short-circuits on ``bar.closed`` and would hand an
+    unfinished bar to the AI as a closed K1.
+    """
+    tf = str(timeframe or "").strip()
+    duration_s = timeframe_to_seconds(tf)
+    if duration_s is None or duration_s <= 0:
+        return False
+    close_ms = int(ts_open_ms) + duration_s * 1000
+    return now_ms < close_ms
+
+
+def _df_to_bars_newest_first(
+    df: Any,
+    n: int,
+    *,
+    timeframe: str = "",
+    now_ms: int | None = None,
+) -> list[KlineBar]:
     if df is None or getattr(df, "empty", True):
         return []
     time_col = "trade_time" if "trade_time" in df.columns else "trade_date"
@@ -128,14 +169,14 @@ def _df_to_bars_newest_first(df: Any, n: int) -> list[KlineBar]:
     if missing:
         raise ValueError(f"Tushare data missing fields: {', '.join(missing)}")
     out = df.sort_values(time_col, ascending=False).reset_index(drop=True)
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
     bars: list[KlineBar] = []
     for i, row in out.head(n).iterrows():
         vol = _number(row, "vol")
-        ts_open = (
-            _trade_time_to_ts_ms(row[time_col])
-            if time_col == "trade_time"
-            else _trade_date_to_ts_ms(row[time_col])
-        )
+        ts_open = _ts_open_of(row, time_col)
+        # Only the head row can still be forming; older rows are always closed.
+        closed = i != 0 or not _head_bar_still_forming(ts_open, timeframe, now_ms)
         bars.append(
             normalize_kline_bar(
                 KlineBar(
@@ -146,7 +187,7 @@ def _df_to_bars_newest_first(df: Any, n: int) -> list[KlineBar]:
                     low=_number(row, "low"),
                     close=_number(row, "close"),
                     volume=vol,
-                    closed=True,
+                    closed=closed,
                 )
             )
         )
@@ -220,7 +261,12 @@ class TushareSource(DataSource):
         fetch_n = max(n + 60, 120)
         key = (self._symbol, self._timeframe, fetch_n)
         now = time.monotonic()
-        cache_ttl_s = _MINUTE_CACHE_TTL_S if self._is_minute_timeframe() else _DAILY_CACHE_TTL_S
+        if self._is_minute_timeframe():
+            cache_ttl_s = _MINUTE_CACHE_TTL_S.get(
+                self._timeframe, _DEFAULT_MINUTE_CACHE_TTL_S
+            )
+        else:
+            cache_ttl_s = _DAILY_CACHE_TTL_S
         if self._cache_key == key and self._cache_bars and now - self._cache_time < cache_ttl_s:
             return list(self._cache_bars[:n])
 
@@ -230,7 +276,7 @@ class TushareSource(DataSource):
                 if self._is_minute_timeframe()
                 else self._fetch_daily(fetch_n)
             )
-            bars = _df_to_bars_newest_first(df, fetch_n)
+            bars = _df_to_bars_newest_first(df, fetch_n, timeframe=self._timeframe)
         except DataSourceTransientError:
             raise
         except Exception as exc:
