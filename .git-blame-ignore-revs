@@ -1,0 +1,11 @@
+# 纯格式化的提交，git blame 请跳过（本文件被 .gitignore 之外的 git config 引用）。
+#
+# 已在本仓库配置： git config blame.ignoreRevsFile .git-blame-ignore-revs
+# 未配置时手动使用： git blame --ignore-revs-file .git-blame-ignore-revs <file>
+#
+# 注意：GitHub 网页端不支持忽略列表，网页 blame 仍会显示这些提交。
+
+# 样式: ruff 安全自动修复（544 处）
+fbf1f27cdea9cbaebcd11cd4e98987eea4e6fcd6
+# 样式: black 统一格式化（247 个文件）
+dff61daeb38284ff140a59f7a4fb04bcda7c75ab
