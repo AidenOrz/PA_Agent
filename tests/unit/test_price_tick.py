@@ -1,4 +1,5 @@
 """Tests for breakout tick inference and entry_price normalization."""
+
 from __future__ import annotations
 
 from pa_agent.ai.json_validator import JsonValidator

@@ -1,4 +1,5 @@
 """Tests for forming-bar close detection."""
+
 from __future__ import annotations
 
 import time
@@ -40,22 +41,28 @@ def test_monthly_close_uses_next_calendar_month() -> None:
     cn_tz = ZoneInfo("Asia/Shanghai")
     opened = datetime(2024, 1, 1, tzinfo=cn_tz)
     before_close = datetime(2024, 1, 31, 23, 59, 59, tzinfo=cn_tz)
-    assert seconds_until_bar_closes(
-        int(opened.timestamp() * 1000),
-        "1M",
-        now_ms=int(before_close.timestamp() * 1000),
-    ) == 1
+    assert (
+        seconds_until_bar_closes(
+            int(opened.timestamp() * 1000),
+            "1M",
+            now_ms=int(before_close.timestamp() * 1000),
+        )
+        == 1
+    )
 
 
 def test_monthly_close_handles_leap_february() -> None:
     cn_tz = ZoneInfo("Asia/Shanghai")
     opened = datetime(2024, 2, 1, tzinfo=cn_tz)
     at_close = datetime(2024, 3, 1, tzinfo=cn_tz)
-    assert seconds_until_bar_closes(
-        int(opened.timestamp() * 1000),
-        "1M",
-        now_ms=int(at_close.timestamp() * 1000),
-    ) == 0
+    assert (
+        seconds_until_bar_closes(
+            int(opened.timestamp() * 1000),
+            "1M",
+            now_ms=int(at_close.timestamp() * 1000),
+        )
+        == 0
+    )
     assert not is_bar_still_forming(
         _bar(int(opened.timestamp() * 1000)),
         "1M",
@@ -157,15 +164,14 @@ def test_weekly_bar_closes_on_friday_not_next_monday(monkeypatch) -> None:
     )
     # 7*86400 would still call the bar forming on Saturday; the calendar
     # rule must not.
-    assert not is_bar_still_forming(
-        _bar(ts_open), "1w", now_ms=int(saturday.timestamp() * 1000)
+    assert not is_bar_still_forming(_bar(ts_open), "1w", now_ms=int(saturday.timestamp() * 1000))
+    assert seconds_until_bar_closes(ts_open, "1w", now_ms=int(friday_close.timestamp() * 1000)) == 0
+    assert (
+        seconds_until_bar_closes(
+            ts_open, "1w", now_ms=int(friday_close.timestamp() * 1000) - 60_000
+        )
+        == 60
     )
-    assert seconds_until_bar_closes(
-        ts_open, "1w", now_ms=int(friday_close.timestamp() * 1000)
-    ) == 0
-    assert seconds_until_bar_closes(
-        ts_open, "1w", now_ms=int(friday_close.timestamp() * 1000) - 60_000
-    ) == 60
 
 
 def test_ashare_daily_bar_stays_forming_through_lunch(monkeypatch) -> None:
@@ -179,9 +185,7 @@ def test_ashare_daily_bar_stays_forming_through_lunch(monkeypatch) -> None:
         lambda: lunch.timestamp(),
     )
     bar = _bar(ts_open)
-    assert is_bar_still_forming(
-        bar, "1d", now_ms=int(lunch.timestamp() * 1000), symbol="600519"
-    )
+    assert is_bar_still_forming(bar, "1d", now_ms=int(lunch.timestamp() * 1000), symbol="600519")
     assert not is_bar_still_forming(
         bar, "1d", now_ms=int(after_close.timestamp() * 1000), symbol="600519"
     )

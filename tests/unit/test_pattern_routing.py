@@ -1,4 +1,5 @@
 """Tests for pattern routing overlays and stage-1 pattern coherence."""
+
 from __future__ import annotations
 
 from pa_agent.ai.coherence_checks import validate_stage1_coherence

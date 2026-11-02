@@ -1,4 +1,5 @@
 """A-share K-line data via East Money (东方财富) built-in HTTP API."""
+
 from __future__ import annotations
 
 import logging
@@ -201,9 +202,7 @@ class EastMoneySource(DataSource):
             raise DataSourceTransientError(f"东方财富拉取失败: {exc}") from exc
 
         if not rows_asc:
-            raise DataSourceTransientError(
-                f"东方财富未返回数据: {self._symbol} {self._timeframe}"
-            )
+            raise DataSourceTransientError(f"东方财富未返回数据: {self._symbol} {self._timeframe}")
 
         if self._timeframe == "1d" and _ashare_trading_day():
             from pa_agent.data.eastmoney_client import fetch_stock_order_book
@@ -314,9 +313,7 @@ class EastMoneySource(DataSource):
 
         if timeframe in ("1w", "1M"):
             code = normalize_ashare_symbol(symbol)
-            raw = fetch_stock_period_recent(
-                code, timeframe=timeframe, n=n + 5, adjust=adjust
-            )
+            raw = fetch_stock_period_recent(code, timeframe=timeframe, n=n + 5, adjust=adjust)
             return _em_rows_to_bars_asc(raw)[-(n + 5) :]
 
         # A-share stocks: Baostock daily is faster and avoids East Money curl(56) drops.
@@ -334,9 +331,7 @@ class EastMoneySource(DataSource):
         start = (_cn_now() - timedelta(days=cal_days)).strftime("%Y%m%d")
         try:
             code = normalize_ashare_symbol(symbol)
-            raw = fetch_stock_daily(
-                code, start_date=start, end_date=end, adjust=adjust
-            )
+            raw = fetch_stock_daily(code, start_date=start, end_date=end, adjust=adjust)
             return _em_rows_to_bars_asc(raw)[-(n + 5) :]
         except EastMoneyTransientError as exc:
             raise DataSourceTransientError(

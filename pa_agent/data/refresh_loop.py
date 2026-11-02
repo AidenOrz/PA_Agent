@@ -1,4 +1,5 @@
 """1 Hz data refresh loop running on a dedicated QThread."""
+
 from __future__ import annotations
 
 import logging
@@ -31,8 +32,8 @@ class RefreshLoop(QThread):
     status_changed = pyqtSignal(str)
 
     # Backoff constants
-    _MAX_BACKOFF_S = 10.0       # cap exponential backoff at 10 seconds
-    _BACKOFF_BASE_S = 0.5      # initial backoff = 0.5s, doubles each failure
+    _MAX_BACKOFF_S = 10.0  # cap exponential backoff at 10 seconds
+    _BACKOFF_BASE_S = 0.5  # initial backoff = 0.5s, doubles each failure
 
     def __init__(
         self,
@@ -71,9 +72,7 @@ class RefreshLoop(QThread):
             self._in_flight = True
             try:
                 try:
-                    bars = self._source.latest_snapshot(
-                        self._n_bars + INDICATOR_WARMUP_BARS + 5
-                    )
+                    bars = self._source.latest_snapshot(self._n_bars + INDICATOR_WARMUP_BARS + 5)
                     if self._consecutive_failures > 0:
                         # Clear any previous error message from the status bar.
                         self.status_changed.emit("")
@@ -117,4 +116,3 @@ class RefreshLoop(QThread):
             sleep_ms = max(0.0, self._interval_ms - elapsed_ms)
             if sleep_ms > 0:
                 time.sleep(sleep_ms / 1000.0)
-

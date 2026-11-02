@@ -2,6 +2,7 @@
 
 Task 19.2
 """
+
 from __future__ import annotations
 
 import json
@@ -74,18 +75,15 @@ def test_no_order_shows_no_trade_conclusion(qtbot, tmp_path):
 
     # DecisionPanel should show 不下单
     conclusion_text = window._decision_panel._conclusion_label.text()
-    assert "不下单" in conclusion_text, (
-        f"Expected 不下单 conclusion, got: {conclusion_text!r}"
-    )
+    assert "不下单" in conclusion_text, f"Expected 不下单 conclusion, got: {conclusion_text!r}"
 
     # Chart must not draw entry/TP/SL lines for 不下单.  Support/resistance
     # levels come from the Stage-1 structure and legitimately stay on screen,
     # so only the decision overlay is checked here.
     chart = window._chart_widget
     overlay_lines = [
-        item for item in chart.decision_overlay_items()
-        if isinstance(item, pg.InfiniteLine)
+        item for item in chart.decision_overlay_items() if isinstance(item, pg.InfiniteLine)
     ]
-    assert overlay_lines == [], (
-        f"Expected no entry/TP/SL lines for 不下单, found {len(overlay_lines)}"
-    )
+    assert (
+        overlay_lines == []
+    ), f"Expected no entry/TP/SL lines for 不下单, found {len(overlay_lines)}"

@@ -6,6 +6,7 @@ configure_logging(api_key: str = "") -> None
 update_api_key(new_key: str) -> None
 verify_logging_handlers() -> bool
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,6 +39,7 @@ def _mask_obvious_secrets(message: str) -> str:
         return mask_secret(match.group(0))
 
     return _OBVIOUS_SECRET_RE.sub(_sub, message)
+
 
 # ── MaskingFormatter ──────────────────────────────────────────────────────────
 

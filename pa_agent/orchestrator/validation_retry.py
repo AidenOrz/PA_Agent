@@ -1,4 +1,5 @@
 """Validate model output with optional continuation retry."""
+
 from __future__ import annotations
 
 import logging
@@ -199,9 +200,7 @@ def validate_with_retry(
         previous_raw = content
         previous_obj = parse_previous_for_cheat(previous_raw)
         # 累加本轮反馈要求修正的字段，供下一轮 cheat 检测豁免使用。
-        feedback_targets |= extract_feedback_targets(
-            err.invalid_fields, err.missing_fields
-        )
+        feedback_targets |= extract_feedback_targets(err.invalid_fields, err.missing_fields)
 
         feedback = build_retry_feedback(
             err,

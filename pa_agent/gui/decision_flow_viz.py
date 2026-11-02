@@ -1,4 +1,5 @@
 """Decision flow visualization — branched sci-fi flowchart (gate + strategy path)."""
+
 from __future__ import annotations
 
 import math
@@ -182,7 +183,12 @@ class _FlowScene(QGraphicsScene):
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         center = rect.center()
-        halo = QLinearGradient(center.x() - rect.width() * 0.45, center.y(), center.x() + rect.width() * 0.45, center.y())
+        halo = QLinearGradient(
+            center.x() - rect.width() * 0.45,
+            center.y(),
+            center.x() + rect.width() * 0.45,
+            center.y(),
+        )
         c0 = QColor(_NEON_BLUE)
         c0.setAlpha(0)
         c1 = QColor(_NEON_CYAN)
@@ -500,11 +506,7 @@ class _DecisionNode(QGraphicsObject):
         painter.setClipRect(question_rect)
         painter.drawText(
             question_rect,
-            int(
-                Qt.AlignmentFlag.AlignLeft
-                | Qt.AlignmentFlag.AlignTop
-                | Qt.TextFlag.TextWordWrap
-            ),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap),
             self._question,
         )
         painter.restore()
@@ -582,12 +584,8 @@ class _AltBranchNode(QGraphicsObject):
         self._node_id = node_id
         self.setZValue(3)
         self._title = "是" if branch == "yes" else "否"
-        self._title_color = QColor(
-            T.ACCENT_SUCCESS if branch == "yes" else T.ACCENT_DANGER
-        )
-        self.setToolTip(
-            f"§{node_id} · 若选「{self._title}」\n{self._outcome}"
-        )
+        self._title_color = QColor(T.ACCENT_SUCCESS if branch == "yes" else T.ACCENT_DANGER)
+        self.setToolTip(f"§{node_id} · 若选「{self._title}」\n{self._outcome}")
 
     def boundingRect(self) -> QRectF:
         return QRectF(-_STUB_W / 2 - 6, -6, _STUB_W + 12, _STUB_H + 12)
@@ -712,6 +710,7 @@ class _EmptyHint(QGraphicsObject):
         painter.setPen(QPen(QColor(T.TEXT_MUTED)))
         painter.setFont(_font_ui(13))
         painter.drawText(self.boundingRect(), int(Qt.AlignmentFlag.AlignCenter), self._text)
+
 
 def _layout_branched_path(
     merged: list[dict[str, Any]],
@@ -889,9 +888,7 @@ class DecisionFlowVizPanel(QWidget):
 
         title = QLabel("决策路径可视化")
         title.setObjectName("toolbarTitle")
-        title.setStyleSheet(
-            "font-size: 15px; font-weight: 600; letter-spacing: 0.5px;"
-        )
+        title.setStyleSheet("font-size: 15px; font-weight: 600; letter-spacing: 0.5px;")
         self._fullscreen_btn = QPushButton("全屏推演")
         self._fullscreen_btn.setObjectName("decisionFlowFullscreenButton")
         self._fullscreen_btn.setStyleSheet(
@@ -912,9 +909,7 @@ class DecisionFlowVizPanel(QWidget):
         )
         sub.setObjectName("mutedLabel")
         sub.setWordWrap(True)
-        sub.setStyleSheet(
-            f"color: {T.TEXT_SECONDARY}; font-size: 12px; line-height: 1.45;"
-        )
+        sub.setStyleSheet(f"color: {T.TEXT_SECONDARY}; font-size: 12px; line-height: 1.45;")
 
         self._hud_label = QLabel("")
         self._hud_label.setTextFormat(Qt.TextFormat.RichText)
@@ -1016,11 +1011,7 @@ class DecisionFlowVizPanel(QWidget):
 
     def _sync_fx_timer(self) -> None:
         """按可见性启停动画定时器（隐藏/关闭时不跑，避免 CPU 常驻）。"""
-        should_run = (
-            self.isVisible()
-            and not self._window_closing
-            and self._fx_animation_wanted()
-        )
+        should_run = self.isVisible() and not self._window_closing and self._fx_animation_wanted()
         if should_run:
             if not self._fx_timer.isActive():
                 self._fx_timer.start(_FX_TICK_MS)
@@ -1029,10 +1020,7 @@ class DecisionFlowVizPanel(QWidget):
 
     def _fx_animation_wanted(self) -> bool:
         """场景里有需要动画的 item 才跑定时器（空场景不烧 CPU）。"""
-        return any(
-            isinstance(item, _TerminalNode | _BranchEdge)
-            for item in self._scene.items()
-        )
+        return any(isinstance(item, _TerminalNode | _BranchEdge) for item in self._scene.items())
 
     def hideEvent(self, event: Any) -> None:
         """隐藏时停掉动画定时器。"""
@@ -1174,7 +1162,6 @@ class DecisionFlowVizPanel(QWidget):
             f"G/D <span style='color:{_NEON_VIOLET};'>{gate_count}/{decision_count}</span>"
             f" &nbsp; <span style='color:{T.TEXT_MUTED};'>|</span> &nbsp; "
             f"TERMINAL <span style='color:{status_color};'>§{terminal_id} {outcome_zh}</span>"
-            
         )
 
     def _open_fullscreen(self) -> None:
@@ -1248,9 +1235,7 @@ class DecisionFlowVizPanel(QWidget):
         rect = QRectF(-400, 0, 800, 280)
         self._scene.setSceneRect(rect)
         self._fit_scene(rect)
-        self._hud_label.setText(
-            f"<span style='color:#ffcf33'>⚠ 数据不足：{check_zh}</span>"
-        )
+        self._hud_label.setText(f"<span style='color:#ffcf33'>⚠ 数据不足：{check_zh}</span>")
 
     def set_trace(
         self,

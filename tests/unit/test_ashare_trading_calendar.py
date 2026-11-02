@@ -1,4 +1,5 @@
 """A 股交易日历守卫：休市工作日不得凭空补出一根日线。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -57,12 +58,7 @@ def test_unknown_calendar_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     """探测拿不准（返回 None）时按「不开市」处理，宁缺毋滥。"""
     monkeypatch.setattr(ac, "ashare_market_open_today", lambda now=None: False)
     rows = _rows()
-    assert (
-        ac.ensure_today_forming_daily_bar(
-            rows, symbol="600519", now=_weekday_midday()
-        )
-        is False
-    )
+    assert ac.ensure_today_forming_daily_bar(rows, symbol="600519", now=_weekday_midday()) is False
     assert len(rows) == 1
 
 

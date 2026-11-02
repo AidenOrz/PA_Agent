@@ -1,4 +1,5 @@
 ﻿"""Right-hand sidebar: live stream, raw I/O, prompt files debug, and decision."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -58,9 +59,9 @@ class AISidebar(QWidget):
     TAB_DECISION_TREE = 1
     TAB_DECISION_FLOW = 2
     TAB_DECISION = 3
-    TAB_FUTURE_TREND = 4   # new
-    TAB_RAW = 5            # was 4
-    TAB_DEBUG = 6          # was 5
+    TAB_FUTURE_TREND = 4  # new
+    TAB_RAW = 5  # was 4
+    TAB_DEBUG = 6  # was 5
 
     def focus_stream(self) -> None:
         """Switch to the live AI output tab (index 0)."""

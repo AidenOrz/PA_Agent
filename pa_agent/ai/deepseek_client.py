@@ -1,4 +1,5 @@
 """DeepSeek AI client (OpenAI-compatible API)."""
+
 from __future__ import annotations
 
 import contextlib
@@ -54,8 +55,8 @@ class _SharedClient:
 
     def __init__(self, client: Any) -> None:
         self.client = client
-        self.owners = 0       # 持有它的 DeepSeekClient 数量（引用计数）
-        self.in_use = 0       # 正在执行的 API 请求数
+        self.owners = 0  # 持有它的 DeepSeekClient 数量（引用计数）
+        self.in_use = 0  # 正在执行的 API 请求数
         self.retired = False  # 已退役：最后一个在途请求结束后关闭
 
 
@@ -173,6 +174,7 @@ def _reset_openai_client_cache() -> None:
 @dataclass
 class AIUsage:
     """Token usage from a single API call."""
+
     prompt_tokens: int = 0
     cached_prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -198,9 +200,10 @@ class AIUsage:
 @dataclass
 class AIReply:
     """Structured response from a single AI API call."""
+
     content: str
     reasoning_content: str
-    raw: dict[str, Any]          # full raw response dict for debug tab
+    raw: dict[str, Any]  # full raw response dict for debug tab
     usage: AIUsage
     request_id: str
     latency_ms: float
@@ -226,20 +229,24 @@ class CancelledError(Exception):
         self.usage = usage or AIUsage()
         self.request_id = request_id or ""
         self.latency_ms = float(latency_ms or 0.0)
-        self.raw = raw if isinstance(raw, dict) else {
-            "id": self.request_id,
-            "model": "",
-            "content": self.content,
-            "reasoning_content": self.reasoning_content,
-            "usage": {
-                "prompt_tokens": self.usage.prompt_tokens,
-                "cached_prompt_tokens": self.usage.cached_prompt_tokens,
-                "completion_tokens": self.usage.completion_tokens,
-                "total_tokens": self.usage.total_tokens,
-            },
-            "latency_ms": self.latency_ms,
-            "cancelled": True,
-        }
+        self.raw = (
+            raw
+            if isinstance(raw, dict)
+            else {
+                "id": self.request_id,
+                "model": "",
+                "content": self.content,
+                "reasoning_content": self.reasoning_content,
+                "usage": {
+                    "prompt_tokens": self.usage.prompt_tokens,
+                    "cached_prompt_tokens": self.usage.cached_prompt_tokens,
+                    "completion_tokens": self.usage.completion_tokens,
+                    "total_tokens": self.usage.total_tokens,
+                },
+                "latency_ms": self.latency_ms,
+                "cancelled": True,
+            }
+        )
 
 
 def _is_stream_options_unsupported_error(exc: Exception) -> bool:
@@ -561,9 +568,7 @@ def _resolve_thinking_params(
     if not _thinking:
         return {}, None
 
-    max_out = _completion_max_tokens(
-        settings, extra_body={}, effort=_effort
-    )
+    max_out = _completion_max_tokens(settings, extra_body={}, effort=_effort)
 
     if _is_packyapi(settings.base_url) and "claude" in model.lower():
         # Packy (e.g. claude-officially): budget_tokens only; reasoning_effort rejected.
@@ -642,11 +647,7 @@ class DeepSeekClient:
         with self._lock:
             current_key = _openai_cache_key(self._settings, timeout_s)
             shared = self._client_shared
-            if (
-                shared is not None
-                and self._client_key == current_key
-                and not shared.retired
-            ):
+            if shared is not None and self._client_key == current_key and not shared.retired:
                 return _ClientLease(shared)
             old_key, old_shared = self._client_key, self._client_shared
             key, shared = _acquire_shared_client(self._settings, timeout_s)
@@ -683,9 +684,7 @@ class DeepSeekClient:
         if system_param:
             extra_body = {**extra_body, "system": system_param}
         _thinking_on = _thinking_enabled(extra_body, _effort)
-        _max_tokens = _completion_max_tokens(
-            self._settings, extra_body=extra_body, effort=_effort
-        )
+        _max_tokens = _completion_max_tokens(self._settings, extra_body=extra_body, effort=_effort)
 
         masked_key = mask_secret(self._settings.api_key)
         self._log.debug(
@@ -746,7 +745,11 @@ class DeepSeekClient:
             if details:
                 parts = []
                 for detail in details:
-                    t = detail.get("text") if isinstance(detail, dict) else getattr(detail, "text", None)
+                    t = (
+                        detail.get("text")
+                        if isinstance(detail, dict)
+                        else getattr(detail, "text", None)
+                    )
                     if t:
                         parts.append(t)
                 reasoning_content = "".join(parts)
@@ -788,7 +791,9 @@ class DeepSeekClient:
 
         self._log.debug(
             "DeepSeekClient.chat done: latency=%.0f ms tokens=%d/%d",
-            latency_ms, usage.prompt_tokens, usage.completion_tokens,
+            latency_ms,
+            usage.prompt_tokens,
+            usage.completion_tokens,
         )
 
         # Log KV-cache hit rate so operators can monitor savings.
@@ -851,9 +856,7 @@ class DeepSeekClient:
         if system_param:
             extra_body = {**extra_body, "system": system_param}
         _thinking_on = _thinking_enabled(extra_body, _effort)
-        _max_tokens = _completion_max_tokens(
-            self._settings, extra_body=extra_body, effort=_effort
-        )
+        _max_tokens = _completion_max_tokens(self._settings, extra_body=extra_body, effort=_effort)
 
         self._log.info(
             "DeepSeekClient.stream_chat: model=%s thinking=%s reasoning_effort=%s "
@@ -905,9 +908,7 @@ class DeepSeekClient:
                     raise
                 # Retry without stream_options only after the provider
                 # explicitly identifies that parameter as unsupported.
-                self._log.debug(
-                    "stream_options not supported; retrying without it: %s", exc
-                )
+                self._log.debug("stream_options not supported; retrying without it: %s", exc)
                 stream_kwargs.pop("stream_options", None)
                 stream = lease.client.chat.completions.create(**stream_kwargs)
 
@@ -972,7 +973,11 @@ class DeepSeekClient:
                     details = getattr(delta, "reasoning_details", None)
                     if details:
                         for detail in details:
-                            t = detail.get("text") if isinstance(detail, dict) else getattr(detail, "text", None)
+                            t = (
+                                detail.get("text")
+                                if isinstance(detail, dict)
+                                else getattr(detail, "text", None)
+                            )
                             if t:
                                 r = (r or "") + t
                 if r:

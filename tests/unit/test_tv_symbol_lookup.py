@@ -1,4 +1,5 @@
 """TradingView HK codes and name alias lookup."""
+
 from __future__ import annotations
 
 import pytest

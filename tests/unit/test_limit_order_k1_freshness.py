@@ -1,4 +1,5 @@
 """Tests for limit-order vs K1 price freshness validation."""
+
 from __future__ import annotations
 
 import json

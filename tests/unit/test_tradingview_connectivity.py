@@ -1,4 +1,5 @@
 """TradingView outbound connectivity probe."""
+
 from __future__ import annotations
 
 import threading

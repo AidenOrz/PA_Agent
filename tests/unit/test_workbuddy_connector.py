@@ -1,4 +1,5 @@
 """Regression tests for WorkBuddy authentication failures."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -21,6 +22,4 @@ def test_workbuddy_probe_rejects_authentication_failures(status_code: int) -> No
     stream_context.__enter__.return_value = response
 
     with patch("httpx.stream", return_value=stream_context):
-        assert not _probe_workbuddy_api(
-            "https://workbuddy.test/v1", "token", timeout=0.1
-        )
+        assert not _probe_workbuddy_api("https://workbuddy.test/v1", "token", timeout=0.1)

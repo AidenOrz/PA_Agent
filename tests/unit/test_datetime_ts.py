@@ -1,4 +1,5 @@
 """Tests for timezone-safe market data timestamp helpers."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -48,7 +49,7 @@ def test_format_epoch_for_display_no_local_shift():
 
 
 def test_naive_local_to_utc_uses_host_offset():
-  # 2024-06-15 20:30 in UTC+8 == 2024-06-15 12:30 UTC
+    # 2024-06-15 20:30 in UTC+8 == 2024-06-15 12:30 UTC
     import time as _time
 
     if _time.timezone == 0 and not _time.daylight:

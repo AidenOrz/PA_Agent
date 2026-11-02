@@ -2,6 +2,7 @@
 
 Task 11.7
 """
+
 from __future__ import annotations
 
 import copy

@@ -1,4 +1,5 @@
 """Audit stage-2 reasoning claims against K-line tables in pending records."""
+
 from __future__ import annotations
 
 import json
@@ -81,14 +82,15 @@ def audit_record(path: Path) -> str | None:
 
     s1_bt = bar_analysis.get("bar_type")
     feat_k1 = feats.get(1, {}).get("type")
-    lines.append(
-        f"[棒型·阶段一] bar_analysis.bar_type={s1_bt} | 几何表K1.type={feat_k1}"
-    )
+    lines.append(f"[棒型·阶段一] bar_analysis.bar_type={s1_bt} | 几何表K1.type={feat_k1}")
 
     price_patterns: list[tuple[str, str | None]] = [
         (r"K(\d{1,3})\s*(?:的)?\s*(?:高点|最高价|high)\s*[=约为是]?\s*(41\d{2}(?:\.\d+)?)", "high"),
         (r"K(\d{1,3})\s*(?:的)?\s*(?:低点|最低价|low)\s*[=约为是]?\s*(41\d{2}(?:\.\d+)?)", "low"),
-        (r"K(\d{1,3})\s*(?:的)?\s*(?:收盘|收盘价|close)\s*[=约为是]?\s*(41\d{2}(?:\.\d+)?)", "close"),
+        (
+            r"K(\d{1,3})\s*(?:的)?\s*(?:收盘|收盘价|close)\s*[=约为是]?\s*(41\d{2}(?:\.\d+)?)",
+            "close",
+        ),
         (r"K(\d{1,3})\s*(?:的)?\s*(?:开盘|开盘价|open)\s*[=约为是]?\s*(41\d{2}(?:\.\d+)?)", "open"),
         (r"K(\d{1,3})\s+high\s*[=:]?\s*(41\d{2}(?:\.\d+)?)", "high"),
         (r"K(\d{1,3})\s+low\s*[=:]?\s*(41\d{2}(?:\.\d+)?)", "low"),
@@ -103,7 +105,9 @@ def audit_record(path: Path) -> str | None:
         for m in re.finditer(pat, reasoning, re.I):
             if field is None and m.lastindex and m.lastindex >= 3:
                 label, price_s, seq_s = m.group(1), m.group(2), m.group(3)
-                field2 = {"高点": "high", "最低价": "low", "低点": "low", "收盘": "close"}.get(label, "close")
+                field2 = {"高点": "high", "最低价": "low", "低点": "low", "收盘": "close"}.get(
+                    label, "close"
+                )
                 seq, price = int(seq_s), float(price_s)
             elif field is None:
                 seq, price = int(m.group(1)), float(m.group(2))
@@ -166,7 +170,13 @@ def audit_record(path: Path) -> str | None:
         actual = feats.get(seq, {}).get("breakout", "?")
         word = "up" if "up" in m.group(0).lower() else "down"
         bt_claims.append(
-            (seq, f"{word}突破", actual, "OK" if actual == word else f"表={actual}", m.group(0)[:55])
+            (
+                seq,
+                f"{word}突破",
+                actual,
+                "OK" if actual == word else f"表={actual}",
+                m.group(0)[:55],
+            )
         )
 
     lines.append(f"[棒型/突破·显式表述] {len(bt_claims)} 条:")
@@ -221,7 +231,11 @@ def main() -> None:
             rec = json.loads(p.read_text(encoding="utf-8"))
             if (rec.get("stage2_response") or {}).get("reasoning_content"):
                 user = next(
-                    (m.get("content", "") for m in (rec.get("stage2_messages") or []) if m.get("role") == "user"),
+                    (
+                        m.get("content", "")
+                        for m in (rec.get("stage2_messages") or [])
+                        if m.get("role") == "user"
+                    ),
                     "",
                 )
                 if user and "## K线数据" in user:

@@ -1,4 +1,5 @@
 """Unit tests for PendingWriter._sanitize and api_key integration."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from pa_agent.util.mask_secret import mask_secret
 # ---------------------------------------------------------------------------
 # _sanitize static method
 # ---------------------------------------------------------------------------
+
 
 class TestSanitize:
     def test_empty_api_key_is_noop(self):
@@ -69,6 +71,7 @@ class TestSanitize:
 # Constructor api_key parameter
 # ---------------------------------------------------------------------------
 
+
 class TestConstructorApiKey:
     def test_default_api_key_is_empty(self, tmp_path):
         writer = PendingWriter(pending_dir=tmp_path)
@@ -82,6 +85,7 @@ class TestConstructorApiKey:
 # ---------------------------------------------------------------------------
 # save_full / save_partial sanitize before writing
 # ---------------------------------------------------------------------------
+
 
 def _make_record(api_key_in_content: str):
     """Build a minimal AnalysisRecord with the api_key embedded in a text field."""

@@ -1,4 +1,5 @@
 """ChartPanel — wrapper around ChartWidget with titlebar, legend, and footer."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -35,10 +36,7 @@ class ChartPanel(QWidget):
         # ── Title bar ─────────────────────────────────────────────────────────
         titlebar = QWidget()
         titlebar.setFixedHeight(40)
-        titlebar.setStyleSheet(
-            "background-color: #161b22;"
-            "border-bottom: 1px solid #30363d;"
-        )
+        titlebar.setStyleSheet("background-color: #161b22;" "border-bottom: 1px solid #30363d;")
         title_layout = QHBoxLayout(titlebar)
         title_layout.setContentsMargins(14, 0, 14, 0)
         title_layout.setSpacing(10)
@@ -52,8 +50,7 @@ class ChartPanel(QWidget):
 
         self._meta = QLabel("")
         self._meta.setStyleSheet(
-            "font-size: 12px; color: #8b949e;"
-            "border: none; background: transparent;"
+            "font-size: 12px; color: #8b949e;" "border: none; background: transparent;"
         )
         title_layout.addWidget(self._meta)
 
@@ -66,18 +63,13 @@ class ChartPanel(QWidget):
 
         # ── Chart widget ──────────────────────────────────────────────────────
         self._chart = ChartWidget(self)
-        self._chart.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self._chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         root.addWidget(self._chart, stretch=1)
 
         # ── Legend ────────────────────────────────────────────────────────────
         legend = QWidget()
         legend.setFixedHeight(28)
-        legend.setStyleSheet(
-            "background-color: #161b22;"
-            "border-top: 1px solid #30363d;"
-        )
+        legend.setStyleSheet("background-color: #161b22;" "border-top: 1px solid #30363d;")
         legend_layout = QHBoxLayout(legend)
         legend_layout.setContentsMargins(14, 0, 14, 0)
         legend_layout.setSpacing(16)
@@ -91,8 +83,7 @@ class ChartPanel(QWidget):
         ]:
             lbl = QLabel(text)
             lbl.setStyleSheet(
-                f"font: 11px monospace; color: {color};"
-                "border: none; background: transparent;"
+                f"font: 11px monospace; color: {color};" "border: none; background: transparent;"
             )
             legend_layout.addWidget(lbl)
 
@@ -102,10 +93,7 @@ class ChartPanel(QWidget):
         # ── Footer ────────────────────────────────────────────────────────────
         footer = QWidget()
         footer.setFixedHeight(28)
-        footer.setStyleSheet(
-            "background-color: #161b22;"
-            "border-top: 1px solid #30363d;"
-        )
+        footer.setStyleSheet("background-color: #161b22;" "border-top: 1px solid #30363d;")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(14, 0, 14, 0)
         footer_layout.setSpacing(10)
@@ -113,8 +101,7 @@ class ChartPanel(QWidget):
         self._footer_hint_text = "滚轮缩放 · 拖拽平移 · 当前为分析快照"
         self._footer_left = QLabel(self._footer_hint_text)
         self._footer_left.setStyleSheet(
-            "font-size: 11px; color: #8b949e;"
-            "border: none; background: transparent;"
+            "font-size: 11px; color: #8b949e;" "border: none; background: transparent;"
         )
         footer_layout.addWidget(self._footer_left)
 
@@ -122,8 +109,7 @@ class ChartPanel(QWidget):
 
         self._footer_right = QLabel("Price — · EMA20 —")
         self._footer_right.setStyleSheet(
-            "font: 11px monospace; color: #8b949e;"
-            "border: none; background: transparent;"
+            "font: 11px monospace; color: #8b949e;" "border: none; background: transparent;"
         )
         footer_layout.addWidget(self._footer_right)
 

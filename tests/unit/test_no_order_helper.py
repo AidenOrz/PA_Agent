@@ -1,4 +1,5 @@
 """Shared "coerce this decision to 不下单" helper."""
+
 from __future__ import annotations
 
 from pa_agent.ai.no_order import (

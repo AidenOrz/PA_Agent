@@ -4,6 +4,7 @@ Hosts two prediction modules:
   1. 下一根K线预期 (migrated from DecisionPanel)
   2. 下一个市场周期预期 (new, AI-generated next_cycle_prediction)
 """
+
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt

@@ -6,6 +6,7 @@
 修复后：相位存在各视图自己的 _FlowScene 上；定时器只在视图可见时运行；
 每次 tick 只重绘扫描光带与终结节点的呼吸描边，而不是整个场景。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -151,4 +152,3 @@ def test_clear_stops_animation_timer(qtbot) -> None:
     panel.clear()
 
     assert panel._fx_timer.isActive() is False
-

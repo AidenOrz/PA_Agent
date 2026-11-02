@@ -1,4 +1,5 @@
 """Application context wiring shared resources without global singletons."""
+
 from __future__ import annotations
 
 import logging
@@ -15,16 +16,16 @@ class AppContext:
     event_bus: Any = None
 
     # Data layer
-    data_source: Any = None       # DataSource implementation
+    data_source: Any = None  # DataSource implementation
 
     # AI / orchestration layer
-    client: Any = None            # DeepSeekClient
-    assembler: Any = None         # PromptAssembler
-    router: Any = None            # route_strategy_files callable
-    validator: Any = None         # JsonValidator
-    pending_writer: Any = None    # PendingWriter
-    exp_reader: Any = None        # ExperienceReader
-    ledger: Any = None            # SessionTokenLedger
+    client: Any = None  # DeepSeekClient
+    assembler: Any = None  # PromptAssembler
+    router: Any = None  # route_strategy_files callable
+    validator: Any = None  # JsonValidator
+    pending_writer: Any = None  # PendingWriter
+    exp_reader: Any = None  # ExperienceReader
+    ledger: Any = None  # SessionTokenLedger
 
     @classmethod
     def bootstrap(cls) -> AppContext:
@@ -71,9 +72,7 @@ class AppContext:
         from pa_agent.data.kline_adjust import apply_kline_adjust_from_settings
 
         apply_kline_adjust_from_settings(settings)
-        ds_kind = normalize_data_source_kind(
-            getattr(settings.general, "last_data_source", "mt5")
-        )
+        ds_kind = normalize_data_source_kind(getattr(settings.general, "last_data_source", "mt5"))
         data_source = create_data_source(ds_kind)
 
         # WeStock exposes calendar periods rather than the intraday periods
@@ -92,7 +91,9 @@ class AppContext:
 
                 if isinstance(data_source, TradingViewSource):
                     # Use saved exchange setting, default to auto (empty).
-                    saved_exchange = getattr(settings.general, 'last_tradingview_exchange', '') or ''
+                    saved_exchange = (
+                        getattr(settings.general, "last_tradingview_exchange", "") or ""
+                    )
                     data_source.set_exchange(saved_exchange)
             data_source.subscribe(
                 settings.general.last_symbol,

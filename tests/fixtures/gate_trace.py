@@ -1,4 +1,5 @@
 """Full stage-1 gate_trace fixtures for validator coherence tests."""
+
 from __future__ import annotations
 
 from typing import Any

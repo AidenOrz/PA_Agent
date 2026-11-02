@@ -1,4 +1,5 @@
 """Unit tests for JSON repair in json_validator."""
+
 from __future__ import annotations
 
 import json
@@ -232,9 +233,9 @@ def test_check_next_bar_prediction_direction_mismatch():
         }
     }
     errors = JsonValidator._check_next_bar_prediction(obj)
-    assert any("direction" in e and "argmax" in e for e in errors), (
-        f"Expected direction-argmax error, got {errors}"
-    )
+    assert any(
+        "direction" in e and "argmax" in e for e in errors
+    ), f"Expected direction-argmax error, got {errors}"
 
 
 def test_check_next_bar_prediction_invalid_fields_prefix():
@@ -249,9 +250,10 @@ def test_check_next_bar_prediction_invalid_fields_prefix():
         }
     }
     errors = JsonValidator._check_next_bar_prediction(obj)
-    assert all(e.startswith("next_bar_prediction.") for e in errors), (
-        f"Not all errors have prefix: {errors}"
-    )
+    assert all(
+        e.startswith("next_bar_prediction.") for e in errors
+    ), f"Not all errors have prefix: {errors}"
+
 
 def test_missing_jsonschema_fails_closed(monkeypatch) -> None:
     """Without jsonschema there is no structural check, so refuse to return Ok.

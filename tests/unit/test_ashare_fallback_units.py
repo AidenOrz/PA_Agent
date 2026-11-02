@@ -1,4 +1,5 @@
 """zzshare 兜底路径：复权参数、限流熔断、成交量单位。"""
+
 from __future__ import annotations
 
 from typing import Any

@@ -1,4 +1,5 @@
 """Tests for gate/decision trace normalization."""
+
 from __future__ import annotations
 
 import json
@@ -68,7 +69,10 @@ def test_gate_end_removed_and_proceed_answer_fixed() -> None:
     normalize_stage1_traces(obj)
     assert len(obj["gate_trace"]) == 1
     assert obj["gate_trace"][0]["node_id"] == "2.5"
-    assert "进入阶段二" in obj["gate_trace"][0]["reason"] or "闸门通过" in obj["gate_trace"][0]["reason"]
+    assert (
+        "进入阶段二" in obj["gate_trace"][0]["reason"]
+        or "闸门通过" in obj["gate_trace"][0]["reason"]
+    )
 
 
 def test_strip_program_reference_from_gate_13_and_25() -> None:
@@ -573,8 +577,20 @@ def test_repair_stage2_terminal_when_103_no() -> None:
     obj = {
         "decision": {"order_type": "不下单"},
         "decision_trace": [
-            {"node_id": "9.5", "question": "q", "answer": "否", "reason": "无跟随", "bar_range": "K2-K1"},
-            {"node_id": "10.3", "question": "交易者方程是否通过？", "answer": "否", "reason": "方程不通过", "bar_range": "K1"},
+            {
+                "node_id": "9.5",
+                "question": "q",
+                "answer": "否",
+                "reason": "无跟随",
+                "bar_range": "K2-K1",
+            },
+            {
+                "node_id": "10.3",
+                "question": "交易者方程是否通过？",
+                "answer": "否",
+                "reason": "方程不通过",
+                "bar_range": "K1",
+            },
         ],
         "terminal": {"node_id": "9.5", "outcome": "wait", "label": "等待"},
     }

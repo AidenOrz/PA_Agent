@@ -2,6 +2,7 @@
 
 Task 11.9
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -108,7 +109,10 @@ def test_client_4xx_does_not_trigger_network_fallback(status_code: int):
 
 
 def test_retry_api_error_saves_stage1_partial(
-    frame, pending_writer, assembler, exp_reader,
+    frame,
+    pending_writer,
+    assembler,
+    exp_reader,
 ):
     """A failed validation retry is persisted with retry messages and stage info."""
     try:
@@ -149,7 +153,9 @@ def test_retry_api_error_saves_stage1_partial(
 
 
 def test_qclaw_fallback_is_temporary_and_does_not_save_settings(
-    assembler, pending_writer, exp_reader,
+    assembler,
+    pending_writer,
+    exp_reader,
 ):
     settings = Settings()
     settings.provider.model = "openclaw"

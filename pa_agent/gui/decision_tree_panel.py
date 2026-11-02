@@ -1,4 +1,5 @@
 """Decision tree panel — binary decision path replay + full tree view."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -118,9 +119,7 @@ class DecisionTreePanel(QWidget):
         )
         self._path_table.verticalHeader().setVisible(False)
         self._path_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._path_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
+        self._path_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._path_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._path_table.setAlternatingRowColors(True)
         self._path_table.setWordWrap(True)
@@ -200,9 +199,7 @@ class DecisionTreePanel(QWidget):
         self._tree.clear()
         data = load_decision_tree()
         for sec in data.get("sections", []):
-            sec_item = QTreeWidgetItem(
-                [f"§{sec['id']}", str(sec.get("title", "")), "", ""]
-            )
+            sec_item = QTreeWidgetItem([f"§{sec['id']}", str(sec.get("title", "")), "", ""])
             sec_item.setData(0, Qt.ItemDataRole.UserRole, f"sec:{sec['id']}")
             sec_font = sec_item.font(0)
             sec_font.setBold(True)
@@ -224,9 +221,7 @@ class DecisionTreePanel(QWidget):
                         f.setBold(True)
                         node_item.setFont(col, f)
                     if answer_col:
-                        node_item.setForeground(
-                            2, QColor(_answer_color(answer_col.split("（")[0]))
-                        )
+                        node_item.setForeground(2, QColor(_answer_color(answer_col.split("（")[0])))
                 else:
                     for col in range(4):
                         node_item.setForeground(col, QColor(T.TEXT_MUTED))
@@ -299,12 +294,8 @@ class DecisionTreePanel(QWidget):
                 3,
                 self._cell(answer_display, color=ans_color, tip=tooltip, alt_row=alt),
             )
-            self._path_table.setItem(
-                row, 4, self._cell(basis or "—", tip=tooltip, alt_row=alt)
-            )
-            self._path_table.setItem(
-                row, 5, self._cell(reason_display, tip=tooltip, alt_row=alt)
-            )
+            self._path_table.setItem(row, 4, self._cell(basis or "—", tip=tooltip, alt_row=alt))
+            self._path_table.setItem(row, 5, self._cell(reason_display, tip=tooltip, alt_row=alt))
 
         self._path_table.resizeRowsToContents()
 
@@ -346,9 +337,7 @@ class DecisionTreePanel(QWidget):
             outcome_zh = _OUTCOME_ZH.get(outcome, outcome)
             label = terminal.get("label", "")
             node_id = terminal.get("node_id", "")
-            self._terminal_banner.setText(
-                f"终点 · §{node_id} · {outcome_zh}\n{label}"
-            )
+            self._terminal_banner.setText(f"终点 · §{node_id} · {outcome_zh}\n{label}")
             oc = T.ACCENT_SUCCESS if outcome == "trade" else T.ACCENT_WARNING
             if outcome in ("reject",):
                 oc = T.ACCENT_DANGER

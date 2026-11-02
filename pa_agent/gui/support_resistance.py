@@ -1,4 +1,5 @@
 """Extract support/resistance levels from AI decision payloads."""
+
 from __future__ import annotations
 
 import re
@@ -49,15 +50,17 @@ def extract_structure_levels(payload: Any, *, max_levels_per_kind: int = 3) -> l
 
 # Keys whose values contain historical price descriptions that should NOT
 # be scanned for support/resistance levels.
-_SKIP_KEYS: frozenset[str] = frozenset({
-    "htf_context",
-    "bar_by_bar_summary",
-    "reasoning",
-    "diagnosis_confidence_reasoning",
-    "trade_confidence_reasoning",
-    "estimated_win_rate_reasoning",
-    "invalidation_condition",
-})
+_SKIP_KEYS: frozenset[str] = frozenset(
+    {
+        "htf_context",
+        "bar_by_bar_summary",
+        "reasoning",
+        "diagnosis_confidence_reasoning",
+        "trade_confidence_reasoning",
+        "estimated_win_rate_reasoning",
+        "invalidation_condition",
+    }
+)
 
 
 def filter_levels_near_price(

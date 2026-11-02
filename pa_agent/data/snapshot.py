@@ -1,4 +1,5 @@
 """KlineFrame snapshot builder."""
+
 from __future__ import annotations
 
 import math
@@ -114,8 +115,8 @@ def compute_indicators(bars: list[KlineBar]) -> IndicatorBundle:
     bars_asc = list(reversed(bars))
 
     closes = [b.close for b in bars_asc]
-    highs  = [b.high  for b in bars_asc]
-    lows   = [b.low   for b in bars_asc]
+    highs = [b.high for b in bars_asc]
+    lows = [b.low for b in bars_asc]
 
     ema20_asc = ema_full(closes, period=20)
     atr14_asc = atr_full(highs, lows, closes, period=14)

@@ -70,7 +70,9 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path in ("/", "/health"):
-            payload = json.dumps({"ok": True, "upstream": UPSTREAM, "service": "pa-agent-qclaw-relay"})
+            payload = json.dumps(
+                {"ok": True, "upstream": UPSTREAM, "service": "pa-agent-qclaw-relay"}
+            )
             body = payload.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

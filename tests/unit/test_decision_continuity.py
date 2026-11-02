@@ -1,4 +1,5 @@
 """Tests for decision continuity (flip cooldown, neutral+AIS, guard)."""
+
 from __future__ import annotations
 
 from pa_agent.ai.decision_continuity import (

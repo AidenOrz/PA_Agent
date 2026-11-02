@@ -1,4 +1,5 @@
 """A 股代码 → 交易所前缀：东财内只有一份权威规则。"""
+
 from __future__ import annotations
 
 import pytest

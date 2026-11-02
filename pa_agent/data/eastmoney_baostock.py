@@ -1,4 +1,5 @@
 """Baostock fallback for A-share minute history beyond East Money rolling window."""
+
 from __future__ import annotations
 
 import contextlib
@@ -147,12 +148,8 @@ class _BaostockSession:
                         )
                         cls._force_reset_locked()
                         continue
-                    raise DataSourceTransientError(
-                        f"Baostock {label} 失败: {exc}"
-                    ) from exc
-            raise DataSourceTransientError(
-                f"Baostock {label} 失败: {last_exc}"
-            ) from last_exc
+                    raise DataSourceTransientError(f"Baostock {label} 失败: {exc}") from exc
+            raise DataSourceTransientError(f"Baostock {label} 失败: {last_exc}") from last_exc
 
     @classmethod
     def _ensure_login_locked(cls) -> None:
@@ -286,7 +283,9 @@ def fetch_minute_history_baostock(
     if freq != "d":
         time_digits = df["time"].astype(str).str.replace(r"\D", "", regex=True)
         # Baostock time: YYYYMMDDHHMMSSmmm (e.g. 20260302103000000)
-        bar_time = pd.to_datetime(time_digits.str.slice(0, 14), format="%Y%m%d%H%M%S", errors="coerce")
+        bar_time = pd.to_datetime(
+            time_digits.str.slice(0, 14), format="%Y%m%d%H%M%S", errors="coerce"
+        )
         slim = pd.DataFrame(
             {
                 "bar_time": bar_time,

@@ -1,4 +1,5 @@
 """Build structured retry user messages from ValidationError."""
+
 from __future__ import annotations
 
 import json
@@ -119,9 +120,7 @@ def build_retry_feedback(
 
     if category == "d":
         if not (previous_raw or "").strip():
-            lines.append(
-                "⚠️ 上一轮正文 content 为空：请把 JSON 写在 content，不要只写在思考区。"
-            )
+            lines.append("⚠️ 上一轮正文 content 为空：请把 JSON 写在 content，不要只写在思考区。")
         if stage == "stage2":
             lines.append(
                 "⚠️ 禁止输出英文说明、Markdown 表格/摘要、「修改完成」「已写入文件」等对话文字；"

@@ -3,6 +3,7 @@
 Covers: orchestrator pass-through, zero extra AI calls, short-circuit,
 logging, round-trip persistence, demo mode legacy, cancel, network error.
 """
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,9 @@ import logging
 
 import pytest
 
-pytestmark = pytest.mark.skip(reason="Deprecated: next-bar prediction contract and settings changed")
+pytestmark = pytest.mark.skip(
+    reason="Deprecated: next-bar prediction contract and settings changed"
+)
 from unittest.mock import MagicMock
 
 import pytest
@@ -83,9 +86,7 @@ def exp_reader():
 # ?? Tests ????????????????????????????????????????????????????????????????????
 
 
-def test_orchestrator_passes_through_prediction(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_orchestrator_passes_through_prediction(frame, pending_writer, assembler, exp_reader):
     """AI returns prediction ? record.stage2_decision contains it (R1.1)."""
     client = MagicMock()
     stage2_with_pred = _make_stage2_with_prediction(_PREDICTION_BULLISH)
@@ -116,9 +117,7 @@ def test_orchestrator_passes_through_prediction(
     assert pred["probabilities"]["bullish"] == 60
 
 
-def test_orchestrator_calls_client_twice_max(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_orchestrator_calls_client_twice_max(frame, pending_writer, assembler, exp_reader):
     """Prediction must NOT cause extra AI calls (R4.3, NFR1.1)."""
     client = MagicMock()
     client.stream_chat.side_effect = [
@@ -140,9 +139,7 @@ def test_orchestrator_calls_client_twice_max(
     assert client.stream_chat.call_count == 2
 
 
-def test_short_circuit_emits_unpredictable(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_short_circuit_emits_unpredictable(frame, pending_writer, assembler, exp_reader):
     """gate_result=wait ? short-circuit response with unpredictable prediction (R4.6)."""
     wait_stage1 = json.loads(json.dumps(VALID_STAGE1))
     wait_stage1["gate_result"] = "wait"
@@ -178,9 +175,7 @@ def test_short_circuit_emits_unpredictable(
     assert pred["unpredictable"] is True
 
 
-def test_log_emits_prediction_line(
-    frame, pending_writer, assembler, exp_reader, caplog
-):
+def test_log_emits_prediction_line(frame, pending_writer, assembler, exp_reader, caplog):
     """Stage 2 completion must log prediction info (R9.3)."""
     client = MagicMock()
     client.stream_chat.side_effect = [
@@ -201,14 +196,12 @@ def test_log_emits_prediction_line(
     with caplog.at_level(logging.INFO, logger="pa_agent.orchestrator.two_stage"):
         orchestrator.submit(frame=frame, cancel_token=CancelToken(), on_event=lambda e: None)
 
-    assert any("next_bar_prediction" in r.message for r in caplog.records), (
-        f"Expected prediction log line, got: {[r.message for r in caplog.records]}"
-    )
+    assert any(
+        "next_bar_prediction" in r.message for r in caplog.records
+    ), f"Expected prediction log line, got: {[r.message for r in caplog.records]}"
 
 
-def test_save_full_round_trip(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_save_full_round_trip(frame, pending_writer, assembler, exp_reader):
     """Write ? reload ? prediction fields preserved (R9.4)."""
     client = MagicMock()
     client.stream_chat.side_effect = [
@@ -235,9 +228,7 @@ def test_save_full_round_trip(
     assert pred["direction"] == "bullish"
 
 
-def test_demo_mode_replays_legacy_record(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_demo_mode_replays_legacy_record(frame, pending_writer, assembler, exp_reader):
     """Legacy record without prediction must not crash DecisionPanel (R10.1)."""
     import sys
 
@@ -258,9 +249,7 @@ def test_demo_mode_replays_legacy_record(
     assert not panel._prediction_group.isVisible()
 
 
-def test_cancel_no_prediction_required(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_cancel_no_prediction_required(frame, pending_writer, assembler, exp_reader):
     """Early cancel must not require prediction (R7.5)."""
     cancel_token = CancelToken()
     cancel_token.set()  # Pre-cancel
@@ -281,12 +270,11 @@ def test_cancel_no_prediction_required(
     assert client.stream_chat.call_count == 0
 
 
-def test_network_error_no_prediction_required(
-    frame, pending_writer, assembler, exp_reader
-):
+def test_network_error_no_prediction_required(frame, pending_writer, assembler, exp_reader):
     """Network error ? next_bar_prediction missing is not an extra failure (R7.5)."""
     try:
         import openai
+
         err = openai.APIConnectionError(request=MagicMock())
     except ImportError:
         err = ConnectionError("timeout")
@@ -307,6 +295,10 @@ def test_network_error_no_prediction_required(
     record = orchestrator.submit(frame=frame, cancel_token=CancelToken(), on_event=lambda e: None)
     # Record should have an exception, but no prediction
     assert record.exception is not None
-    pred = record.stage2_decision.get("next_bar_prediction") if isinstance(record.stage2_decision, dict) else None
+    pred = (
+        record.stage2_decision.get("next_bar_prediction")
+        if isinstance(record.stage2_decision, dict)
+        else None
+    )
     # prediction may be None ? that's fine
     assert pred is None or isinstance(pred, dict)

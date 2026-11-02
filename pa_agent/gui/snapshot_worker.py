@@ -1,4 +1,5 @@
 """Background fetch of K-line snapshots (keeps UI thread off the network)."""
+
 from __future__ import annotations
 
 import logging

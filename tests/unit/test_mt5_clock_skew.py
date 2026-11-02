@@ -1,4 +1,5 @@
 """Unit tests: MT5 server clock skew vs local time in forming-bar countdown."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -57,4 +58,3 @@ def test_mt5_server_time_ms_returns_none_when_disconnected() -> None:
 
     src = MT5Source()
     assert src.server_time_ms() is None
-

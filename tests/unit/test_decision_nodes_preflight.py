@@ -7,6 +7,7 @@ Tests cover:
 - Robustness (malformed input)
 - Hypothesis property tests (Property 1)
 """
+
 from __future__ import annotations
 
 from hypothesis import given, settings
@@ -47,6 +48,7 @@ def _make_frame(n: int = 20, *, all_nan_ema: bool = False, all_nan_atr: bool = F
 
 # ── Category 1: bars_empty_or_bad_ohlc ───────────────────────────────────────
 
+
 def test_none_frame_returns_bars_empty():
     result = check_preflight_data(None)
     assert result.ok is False
@@ -55,7 +57,8 @@ def test_none_frame_returns_bars_empty():
 
 def test_empty_bars_returns_bars_empty():
     frame = KlineFrame(
-        symbol="TEST", timeframe="1h",
+        symbol="TEST",
+        timeframe="1h",
         bars=(),
         snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(ema20=(), atr14=()),
@@ -67,13 +70,25 @@ def test_empty_bars_returns_bars_empty():
 
 def test_bar_with_high_less_than_low():
     bars = (
-        KlineBar(seq=1, ts_open=1.0, open=100.0, high=90.0, low=110.0, close=100.0, volume=1.0, closed=True),
+        KlineBar(
+            seq=1,
+            ts_open=1.0,
+            open=100.0,
+            high=90.0,
+            low=110.0,
+            close=100.0,
+            volume=1.0,
+            closed=True,
+        ),
     ) + tuple(_make_bar(i + 2) for i in range(20))
     frame = KlineFrame(
-        symbol="TEST", timeframe="1h",
+        symbol="TEST",
+        timeframe="1h",
         bars=bars,
         snapshot_ts_local_ms=1,
-        indicators=IndicatorBundle(ema20=tuple([2000.0] * len(bars)), atr14=tuple([10.0] * len(bars))),
+        indicators=IndicatorBundle(
+            ema20=tuple([2000.0] * len(bars)), atr14=tuple([10.0] * len(bars))
+        ),
     )
     result = check_preflight_data(frame)
     assert result.ok is False
@@ -81,6 +96,7 @@ def test_bar_with_high_less_than_low():
 
 
 # ── Category 2: bar_count_lt_20 ───────────────────────────────────────────────
+
 
 def test_19_bars_fails():
     result = check_preflight_data(_make_frame(19))
@@ -109,6 +125,7 @@ def test_boundary_one_below_threshold():
 
 # ── Category 3: indicators_all_nan ────────────────────────────────────────────
 
+
 def test_all_nan_indicators_fails():
     result = check_preflight_data(_make_frame(20, all_nan_ema=True, all_nan_atr=True))
     assert result.ok is False
@@ -129,6 +146,7 @@ def test_only_atr_nan_passes_if_ema_valid():
 
 # ── Sufficient valid frame ─────────────────────────────────────────────────────
 
+
 def test_sufficient_frame_passes():
     result = check_preflight_data(_make_frame(25))
     assert result.ok is True
@@ -138,10 +156,13 @@ def test_sufficient_frame_passes():
 
 # ── Robustness ────────────────────────────────────────────────────────────────
 
+
 def test_malformed_frame_no_bars_attr():
     """Object without bars attr should fail conservatively."""
+
     class FakeFrame:
         pass
+
     result = check_preflight_data(FakeFrame())
     assert result.ok is False
 
@@ -160,25 +181,36 @@ def test_integer_input_no_crash():
 # ── Property 1: PreflightDataGate boundary and determinism ────────────────────
 # Feature: deterministic-decision-nodes, Property 1: PreflightDataGate boundary & determinism
 
+
 @st.composite
 def valid_bars(draw, n: int) -> tuple[KlineBar, ...]:
     """Generate n valid KlineBars."""
     bars = []
     for i in range(n):
-        low = draw(st.floats(min_value=1.0, max_value=9000.0, allow_nan=False, allow_infinity=False))
-        high = draw(st.floats(min_value=low, max_value=low + 200.0, allow_nan=False, allow_infinity=False))
-        open_ = draw(st.floats(min_value=low, max_value=high, allow_nan=False, allow_infinity=False))
-        close = draw(st.floats(min_value=low, max_value=high, allow_nan=False, allow_infinity=False))
-        bars.append(KlineBar(
-            seq=i + 1,
-            ts_open=float(1_000_000 - i * 60_000),
-            open=open_,
-            high=high,
-            low=low,
-            close=close,
-            volume=1.0,
-            closed=True,
-        ))
+        low = draw(
+            st.floats(min_value=1.0, max_value=9000.0, allow_nan=False, allow_infinity=False)
+        )
+        high = draw(
+            st.floats(min_value=low, max_value=low + 200.0, allow_nan=False, allow_infinity=False)
+        )
+        open_ = draw(
+            st.floats(min_value=low, max_value=high, allow_nan=False, allow_infinity=False)
+        )
+        close = draw(
+            st.floats(min_value=low, max_value=high, allow_nan=False, allow_infinity=False)
+        )
+        bars.append(
+            KlineBar(
+                seq=i + 1,
+                ts_open=float(1_000_000 - i * 60_000),
+                open=open_,
+                high=high,
+                low=low,
+                close=close,
+                volume=1.0,
+                closed=True,
+            )
+        )
     return tuple(bars)
 
 
@@ -190,7 +222,10 @@ def test_property1_sufficient_frame_passes(n: int) -> None:
     """Property 1: frames with n>=20 valid bars and valid indicators pass preflight."""
     bars = tuple(_make_bar(i + 1) for i in range(n))
     frame = KlineFrame(
-        symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+        symbol="TEST",
+        timeframe="1h",
+        bars=bars,
+        snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(ema20=tuple([2000.0] * n), atr14=tuple([10.0] * n)),
     )
     r1 = check_preflight_data(frame)
@@ -210,7 +245,10 @@ def test_property1_insufficient_bars_fails(n: int) -> None:
     ema = tuple([2000.0] * n)
     atr = tuple([10.0] * n)
     frame = KlineFrame(
-        symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+        symbol="TEST",
+        timeframe="1h",
+        bars=bars,
+        snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(ema20=ema, atr14=atr),
     )
     r = check_preflight_data(frame)
@@ -229,7 +267,10 @@ def test_property1_all_nan_indicators_fails(n: int) -> None:
     """Property 1: frames with n>=20 but all NaN indicators fail with indicators_all_nan."""
     bars = tuple(_make_bar(i + 1) for i in range(n))
     frame = KlineFrame(
-        symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+        symbol="TEST",
+        timeframe="1h",
+        bars=bars,
+        snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(
             ema20=tuple([float("nan")] * n),
             atr14=tuple([float("nan")] * n),

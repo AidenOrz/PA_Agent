@@ -1,4 +1,5 @@
 """Unit tests for settings load/save round-trip (task 2.4)."""
+
 from __future__ import annotations
 
 import json

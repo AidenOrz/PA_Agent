@@ -2,6 +2,7 @@
 
 Covers Properties 2-10 and override Properties 15-22.
 """
+
 from __future__ import annotations
 
 from hypothesis import given, settings
@@ -23,12 +24,23 @@ from pa_agent.ai.decision_nodes import (
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 
 
-def _make_bar(seq: int, *, high: float = 2010.0, low: float = 1990.0,
-              open_: float = 2000.0, close: float = 2005.0) -> KlineBar:
+def _make_bar(
+    seq: int,
+    *,
+    high: float = 2010.0,
+    low: float = 1990.0,
+    open_: float = 2000.0,
+    close: float = 2005.0,
+) -> KlineBar:
     return KlineBar(
-        seq=seq, ts_open=float(1_000_000 - seq * 60_000),
-        open=open_, high=high, low=low, close=close,
-        volume=1.0, closed=True,
+        seq=seq,
+        ts_open=float(1_000_000 - seq * 60_000),
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=1.0,
+        closed=True,
     )
 
 
@@ -63,7 +75,8 @@ def _make_frame(
 
     atr = tuple([10.0] * n)
     return KlineFrame(
-        symbol="TEST", timeframe="1h",
+        symbol="TEST",
+        timeframe="1h",
         bars=tuple(bars),
         snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(ema20=ema, atr14=atr),
@@ -71,6 +84,7 @@ def _make_frame(
 
 
 # ── DirectionJudge tests ──────────────────────────────────────────────────────
+
 
 class TestDirectionJudge:
     def test_bullish_frame_gives_bullish(self):
@@ -148,7 +162,10 @@ class TestDirectionProperty2:
         """Property 2: direction ∈ {bullish, bearish, neutral}."""
         bars = tuple(_make_bar(i + 1) for i in range(n))
         frame = KlineFrame(
-            symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+            symbol="TEST",
+            timeframe="1h",
+            bars=bars,
+            snapshot_ts_local_ms=1,
             indicators=IndicatorBundle(ema20=tuple([2000.0] * n), atr14=tuple([10.0] * n)),
         )
         direction, fill = judge_direction(frame)
@@ -166,6 +183,7 @@ class TestDirectionProperty2:
 
 # ── AlwaysInJudge tests ───────────────────────────────────────────────────────
 
+
 class TestAlwaysInJudge:
     def test_always_in_long_when_mostly_above_ema_and_rising_slope(self):
         """When most closes above EMA and slope up → AIL."""
@@ -174,7 +192,10 @@ class TestAlwaysInJudge:
         bars = tuple(_make_bar(i + 1, close=2050.0, high=2060.0, low=2040.0) for i in range(n))
         ema = tuple(2000.0 + (n - i) * 0.5 for i in range(n))  # rising EMA
         frame = KlineFrame(
-            symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+            symbol="TEST",
+            timeframe="1h",
+            bars=bars,
+            snapshot_ts_local_ms=1,
             indicators=IndicatorBundle(ema20=ema, atr14=tuple([10.0] * n)),
         )
         fill = judge_always_in(frame)
@@ -187,7 +208,10 @@ class TestAlwaysInJudge:
         bars = tuple(_make_bar(i + 1, close=1950.0, high=1960.0, low=1940.0) for i in range(n))
         ema = tuple(2000.0 - (n - i) * 0.5 for i in range(n))  # falling EMA (still above 1950)
         frame = KlineFrame(
-            symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+            symbol="TEST",
+            timeframe="1h",
+            bars=bars,
+            snapshot_ts_local_ms=1,
             indicators=IndicatorBundle(ema20=ema, atr14=tuple([10.0] * n)),
         )
         fill = judge_always_in(frame)
@@ -198,11 +222,12 @@ class TestAlwaysInJudge:
 
     def test_no_always_in_when_balanced(self):
         n = 25
-        bars = tuple(
-            _make_bar(i + 1, close=2005.0 if i % 2 == 0 else 1995.0) for i in range(n)
-        )
+        bars = tuple(_make_bar(i + 1, close=2005.0 if i % 2 == 0 else 1995.0) for i in range(n))
         frame = KlineFrame(
-            symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+            symbol="TEST",
+            timeframe="1h",
+            bars=bars,
+            snapshot_ts_local_ms=1,
             indicators=IndicatorBundle(ema20=tuple([2000.0] * n), atr14=tuple([10.0] * n)),
         )
         fill = judge_always_in(frame)
@@ -214,7 +239,10 @@ class TestAlwaysInJudge:
         bars = tuple(_make_bar(i + 1, close=2050.0, high=2060.0, low=2040.0) for i in range(n))
         ema = tuple(2000.0 + (n - i) * 0.5 for i in range(n))
         frame = KlineFrame(
-            symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+            symbol="TEST",
+            timeframe="1h",
+            bars=bars,
+            snapshot_ts_local_ms=1,
             indicators=IndicatorBundle(ema20=ema, atr14=tuple([10.0] * n)),
         )
         fill = judge_always_in(frame)
@@ -227,9 +255,11 @@ class TestAlwaysInJudge:
 
 # ── SignalBarJudge tests ──────────────────────────────────────────────────────
 
+
 class MockFeature:
-    def __init__(self, bar_type: str, range_atr_ratio: float | None,
-                 follow_through_1_2: str = "yes"):
+    def __init__(
+        self, bar_type: str, range_atr_ratio: float | None, follow_through_1_2: str = "yes"
+    ):
         self.bar_type = bar_type
         self.range_atr_ratio = range_atr_ratio
         self.follow_through_1_2 = follow_through_1_2
@@ -331,12 +361,32 @@ class TestFollowThroughJudge:
 
 # ── OverrideArbiter tests ─────────────────────────────────────────────────────
 
+
 def _make_program_nodes():
     """Return sample program nodes for override testing."""
     return [
-        {"node_id": "1.1", "question": "q1.1", "answer": "是", "reason": "r", "bar_range": "K20-K1"},
-        {"node_id": "2.3", "question": "q2.3", "answer": "是", "reason": "r", "bar_range": "K20-K1", "branch": "bullish"},
-        {"node_id": "2.4", "question": "q2.4", "answer": "否", "reason": "r", "bar_range": "K20-K1"},
+        {
+            "node_id": "1.1",
+            "question": "q1.1",
+            "answer": "是",
+            "reason": "r",
+            "bar_range": "K20-K1",
+        },
+        {
+            "node_id": "2.3",
+            "question": "q2.3",
+            "answer": "是",
+            "reason": "r",
+            "bar_range": "K20-K1",
+            "branch": "bullish",
+        },
+        {
+            "node_id": "2.4",
+            "question": "q2.4",
+            "answer": "否",
+            "reason": "r",
+            "bar_range": "K20-K1",
+        },
         {"node_id": "9.1", "question": "q9.1", "answer": "是", "reason": "r", "bar_range": "K1"},
         {"node_id": "9.2", "question": "q9.2", "answer": "是", "reason": "r", "bar_range": "K1"},
         {"node_id": "9.3", "question": "q9.3", "answer": "否", "reason": "r", "bar_range": "K1"},
@@ -400,7 +450,14 @@ class TestOverrideArbiter:
     def test_valid_override_accepted_with_trace(self):
         """Property 18: valid override → accepted with trace fields."""
         nodes = _make_program_nodes()
-        overrides = [{"node_id": "2.4", "answer": "是", "branch": "AIL", "override_reason": "strong bullish trend"}]
+        overrides = [
+            {
+                "node_id": "2.4",
+                "answer": "是",
+                "branch": "AIL",
+                "override_reason": "strong bullish trend",
+            }
+        ]
         out = {}
         result = apply_overrides(nodes, overrides, out=out, stage="stage1")
         n24 = next((n for n in result if n["node_id"] == "2.4"), None)
@@ -412,8 +469,14 @@ class TestOverrideArbiter:
     def test_23_override_consistent_bullish_accepted(self):
         """Property 19: §2.3 bullish/是 override accepted and direction synced."""
         nodes = _make_program_nodes()
-        overrides = [{"node_id": "2.3", "answer": "是", "branch": "bearish",
-                      "override_reason": "strong bearish reversal"}]
+        overrides = [
+            {
+                "node_id": "2.3",
+                "answer": "是",
+                "branch": "bearish",
+                "override_reason": "strong bearish reversal",
+            }
+        ]
         out = {"direction": "bullish"}
         result = apply_overrides(nodes, overrides, out=out, stage="stage1")
         n23 = next((n for n in result if n["node_id"] == "2.3"), None)
@@ -425,8 +488,14 @@ class TestOverrideArbiter:
     def test_23_override_neutral_answer_zhongxing(self):
         """Property 19: §2.3 neutral/中性 override accepted."""
         nodes = _make_program_nodes()
-        overrides = [{"node_id": "2.3", "answer": "中性", "branch": "neutral",
-                      "override_reason": "market is ranging"}]
+        overrides = [
+            {
+                "node_id": "2.3",
+                "answer": "中性",
+                "branch": "neutral",
+                "override_reason": "market is ranging",
+            }
+        ]
         out = {"direction": "bullish"}
         result = apply_overrides(nodes, overrides, out=out, stage="stage1")
         n23 = next((n for n in result if n["node_id"] == "2.3"), None)
@@ -436,8 +505,14 @@ class TestOverrideArbiter:
     def test_23_override_inconsistent_rejected(self):
         """Property 19: §2.3 inconsistent answer/branch → rejected."""
         nodes = _make_program_nodes()
-        overrides = [{"node_id": "2.3", "answer": "中性", "branch": "bullish",
-                      "override_reason": "contradiction"}]
+        overrides = [
+            {
+                "node_id": "2.3",
+                "answer": "中性",
+                "branch": "bullish",
+                "override_reason": "contradiction",
+            }
+        ]
         out = {"direction": "bullish"}
         result = apply_overrides(nodes, overrides, out=out, stage="stage1")
         n23 = next((n for n in result if n["node_id"] == "2.3"), None)
@@ -464,12 +539,36 @@ class TestOverrideArbiter:
     def test_merge_program_nodes_keeps_ai_primary_without_program_append(self):
         """AI-primary §1.3/§2.5 keep AI reason; program metrics are not appended."""
         trace = [
-            {"node_id": "1.3", "question": "AI q", "answer": "否", "reason": "AI混乱判断", "bar_range": "K5-K1"},
-            {"node_id": "2.5", "question": "AI q5", "answer": "是", "reason": "AI", "bar_range": "K1"},
+            {
+                "node_id": "1.3",
+                "question": "AI q",
+                "answer": "否",
+                "reason": "AI混乱判断",
+                "bar_range": "K5-K1",
+            },
+            {
+                "node_id": "2.5",
+                "question": "AI q5",
+                "answer": "是",
+                "reason": "AI",
+                "bar_range": "K1",
+            },
         ]
         prog = [
-            {"node_id": "1.3", "question": "程序 q", "answer": "否", "reason": "程序长理由" * 20, "bar_range": "K8-K1"},
-            {"node_id": "2.5", "question": "程序 q5", "answer": "否", "reason": "程序长理由" * 20, "bar_range": "K8-K1"},
+            {
+                "node_id": "1.3",
+                "question": "程序 q",
+                "answer": "否",
+                "reason": "程序长理由" * 20,
+                "bar_range": "K8-K1",
+            },
+            {
+                "node_id": "2.5",
+                "question": "程序 q5",
+                "answer": "否",
+                "reason": "程序长理由" * 20,
+                "bar_range": "K8-K1",
+            },
         ]
         result = merge_program_nodes(trace, prog)
         node_13 = next((n for n in result if n["node_id"] == "1.3"), None)
@@ -484,12 +583,37 @@ class TestOverrideArbiter:
     def test_merge_program_nodes_overrides_ai_nodes(self):
         """merge_program_nodes: program nodes override AI nodes of same node_id."""
         trace = [
-            {"node_id": "2.3", "question": "AI q", "answer": "空头", "reason": "AI", "bar_range": "K5-K1"},
-            {"node_id": "2.5", "question": "AI q5", "answer": "是", "reason": "AI", "bar_range": "K1"},
+            {
+                "node_id": "2.3",
+                "question": "AI q",
+                "answer": "空头",
+                "reason": "AI",
+                "bar_range": "K5-K1",
+            },
+            {
+                "node_id": "2.5",
+                "question": "AI q5",
+                "answer": "是",
+                "reason": "AI",
+                "bar_range": "K1",
+            },
         ]
         prog = [
-            {"node_id": "2.3", "question": "程序 q", "answer": "是", "reason": "程序", "bar_range": "K20-K1", "branch": "bullish"},
-            {"node_id": "2.5", "question": "程序 q5", "answer": "否", "reason": "程序长理由" * 20, "bar_range": "K8-K1"},
+            {
+                "node_id": "2.3",
+                "question": "程序 q",
+                "answer": "是",
+                "reason": "程序",
+                "bar_range": "K20-K1",
+                "branch": "bullish",
+            },
+            {
+                "node_id": "2.5",
+                "question": "程序 q5",
+                "answer": "否",
+                "reason": "程序长理由" * 20,
+                "bar_range": "K8-K1",
+            },
         ]
         result = merge_program_nodes(trace, prog)
         node_23 = next((n for n in result if n["node_id"] == "2.3"), None)
@@ -503,7 +627,13 @@ class TestOverrideArbiter:
         assert "程序参考数据" not in node_25["reason"]
 
     def test_write_override_trace_sets_fields(self):
-        node = {"node_id": "2.3", "answer": "是", "branch": "bullish", "reason": "r", "bar_range": "K1"}
+        node = {
+            "node_id": "2.3",
+            "answer": "是",
+            "branch": "bullish",
+            "reason": "r",
+            "bar_range": "K1",
+        }
         override = {"answer": "否", "branch": "bearish", "override_reason": "reversal signal"}
         write_override_trace(node, override)
         assert node["program_answer"] == "是"
@@ -516,11 +646,15 @@ class TestOverrideArbiter:
 
 # ── DecisionNodeEngine.apply_stage1 tests ────────────────────────────────────
 
+
 class TestApplyStage1:
     def _make_sufficient_frame(self, n: int = 25) -> KlineFrame:
         bars = tuple(_make_bar(i + 1) for i in range(n))
         return KlineFrame(
-            symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+            symbol="TEST",
+            timeframe="1h",
+            bars=bars,
+            snapshot_ts_local_ms=1,
             indicators=IndicatorBundle(ema20=tuple([2000.0] * n), atr14=tuple([10.0] * n)),
         )
 

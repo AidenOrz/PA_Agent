@@ -156,7 +156,9 @@ def main() -> int:
         from tests.fixtures.validators import schema_test_validator
 
         validator = schema_test_validator()
-        log.warning("Using lenient validator (--relax-validation); production uses strict from settings.json")
+        log.warning(
+            "Using lenient validator (--relax-validation); production uses strict from settings.json"
+        )
     else:
         from pa_agent.ai.json_validator import JsonValidator
 
@@ -204,10 +206,14 @@ def main() -> int:
     if s1:
         print(
             "stage1:",
-            "gate_result=", s1.get("gate_result"),
-            "cycle_position=", s1.get("cycle_position"),
-            "direction=", s1.get("direction"),
-            "patterns=", s1.get("detected_patterns"),
+            "gate_result=",
+            s1.get("gate_result"),
+            "cycle_position=",
+            s1.get("cycle_position"),
+            "direction=",
+            s1.get("direction"),
+            "patterns=",
+            s1.get("detected_patterns"),
         )
     else:
         print("stage1: (none)")
@@ -217,9 +223,12 @@ def main() -> int:
         dec = s2.get("decision") or {}
         print(
             "stage2:",
-            "order_type=", dec.get("order_type"),
-            "order_direction=", dec.get("order_direction"),
-            "gate_shortcircuited=", s2.get("gate_shortcircuited"),
+            "order_type=",
+            dec.get("order_type"),
+            "order_direction=",
+            dec.get("order_direction"),
+            "gate_shortcircuited=",
+            s2.get("gate_shortcircuited"),
         )
         strat = record.strategy_files_used or []
         print("strategy_files_used:", strat)
@@ -229,12 +238,8 @@ def main() -> int:
     if record.exception:
         print("exception:", json.dumps(record.exception, ensure_ascii=False, indent=2))
 
-    ok_pipeline = (
-        OrchestratorEvent.Stage1Done in events
-        and (
-            OrchestratorEvent.Stage2Done in events
-            or OrchestratorEvent.RecordSaved in events
-        )
+    ok_pipeline = OrchestratorEvent.Stage1Done in events and (
+        OrchestratorEvent.Stage2Done in events or OrchestratorEvent.RecordSaved in events
     )
     exc = record.exception or {}
     exc_type = exc.get("type", "")

@@ -1,4 +1,5 @@
 """Tests for validation retry policy and feedback."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -138,9 +139,7 @@ def test_validation_retry_api_exception_keeps_feedback_state():
             validator=_Validator(),
             validation_settings=_Settings(),
             validate_kwargs={},
-            call_api=lambda _messages: (_ for _ in ()).throw(
-                RuntimeError("retry API failed")
-            ),
+            call_api=lambda _messages: (_ for _ in ()).throw(RuntimeError("retry API failed")),
         )
 
     error = caught.value
@@ -254,12 +253,8 @@ def test_retry_stage1_still_retries_when_stage2_disabled():
     assert isinstance(result.result, Ok)
 
 
-_S1_BULLISH = (
-    '{"direction": "bullish", "cycle_position": "spike", "gate_result": "proceed"}'
-)
-_S1_BEARISH = (
-    '{"direction": "bearish", "cycle_position": "spike", "gate_result": "proceed"}'
-)
+_S1_BULLISH = '{"direction": "bullish", "cycle_position": "spike", "gate_result": "proceed"}'
+_S1_BEARISH = '{"direction": "bearish", "cycle_position": "spike", "gate_result": "proceed"}'
 
 
 def _run_cheat_case(invalid_fields: list[str]) -> object:

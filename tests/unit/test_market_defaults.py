@@ -1,4 +1,5 @@
 """Gold default symbol / exchange normalization."""
+
 from __future__ import annotations
 
 from pa_agent.data.market_defaults import (
@@ -50,9 +51,7 @@ def test_tv_forex_auto_probe_skips_venues_without_a_gold_feed():
     assert exchanges == [
         ex
         for ex in TV_EXCHANGE_PRESETS
-        if ex
-        and ex not in {"SSE", "SZSE", "HKEX"}
-        and ex in TV_GOLD_SYMBOL_BY_EXCHANGE
+        if ex and ex not in {"SSE", "SZSE", "HKEX"} and ex in TV_GOLD_SYMBOL_BY_EXCHANGE
     ]
     assert ("OANDA", "XAUUSD") in plan
     assert ("TVC", "GOLD") in plan

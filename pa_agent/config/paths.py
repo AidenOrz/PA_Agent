@@ -3,6 +3,7 @@
 All runtime directories are rooted at PROJECT_ROOT.
 Import this module everywhere instead of hard-coding paths.
 """
+
 from __future__ import annotations
 
 import re
@@ -22,6 +23,7 @@ def sanitize_filename_component(value: object, *, fallback: str = "unknown") -> 
     text = _INVALID_FILENAME_COMPONENT_CHARS.sub("-", text)
     text = text.replace("..", "-").strip(" .-")
     return text or fallback
+
 
 # ── Root ──────────────────────────────────────────────────────────────────────
 # Resolve dynamically: this file is pa_agent/config/paths.py, so go up 3 levels.

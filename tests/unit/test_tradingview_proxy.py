@@ -6,6 +6,7 @@ Covers:
   whitelists tradingview.com; auto-detected proxies still respect NO_PROXY.
 - ``create_data_source("tradingview")`` forwards ``general.tradingview_proxy``.
 """
+
 from __future__ import annotations
 
 import sys
@@ -70,9 +71,7 @@ class TestDetectProxyOverride:
         assert result is not None
         assert result[3] == "manual"
 
-    def test_blank_override_falls_through_to_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_blank_override_falls_through_to_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HTTPS_PROXY", "http://10.0.0.1:8118")
         result = TradingViewSource._detect_proxy("   ")
         assert result is not None
@@ -116,9 +115,7 @@ class TestPatchWsProxyOverride:
 
 
 class TestFactoryForwardsProxy:
-    def test_create_data_source_passes_setting(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_create_data_source_passes_setting(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from pa_agent.config.settings import Settings
         from pa_agent.data.factory import create_data_source
 
@@ -128,9 +125,7 @@ class TestFactoryForwardsProxy:
             return settings
 
         # factory imports load_settings at call time from this module.
-        monkeypatch.setattr(
-            "pa_agent.config.settings.load_settings", fake_load_settings
-        )
+        monkeypatch.setattr("pa_agent.config.settings.load_settings", fake_load_settings)
         source = create_data_source("tradingview")
 
         assert isinstance(source, TradingViewSource)

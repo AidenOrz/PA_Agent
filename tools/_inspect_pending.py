@@ -1,4 +1,5 @@
 """Inspect records/pending for retries, failures, and outcome patterns."""
+
 from __future__ import annotations
 
 import json
@@ -23,9 +24,7 @@ def main() -> None:
         s1_asst = sum(1 for m in s1 if m.get("role") == "assistant")
         s2_asst = sum(1 for m in s2 if m.get("role") == "assistant")
         has_incremental = any(
-            "阶段一增量更新任务" in str(m.get("content", ""))
-            for m in s1
-            if m.get("role") == "user"
+            "阶段一增量更新任务" in str(m.get("content", "")) for m in s1 if m.get("role") == "user"
         )
 
         issues.append(
@@ -49,10 +48,7 @@ def main() -> None:
     print("TOTAL", len(issues))
     print("completed stage2", sum(1 for i in issues if i["order"]))
     print("exceptions", sum(1 for i in issues if i["exc"]))
-    print("real s1 retries", sum(
-        1 for i in issues for _ in [0]
-        if False
-    ))
+    print("real s1 retries", sum(1 for i in issues for _ in [0] if False))
     print("terminal:", Counter(i["terminal"] for i in issues if i["terminal"]))
     print("order:", Counter(i["order"] for i in issues if i["order"]))
     print("model:", Counter(i["model"] for i in issues))

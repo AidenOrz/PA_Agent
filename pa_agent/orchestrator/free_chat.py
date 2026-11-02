@@ -5,6 +5,7 @@ AnalysisRecord and sends follow-up messages to the DeepSeek API.
 
 Design reference: design.md §B.17
 """
+
 from __future__ import annotations
 
 import json
@@ -219,7 +220,9 @@ class FreeChatSession:
             body = round(abs(k1_close - k1_open), 3)
             full_range = round(k1_high - k1_low, 3)
             body_ratio = round(body / full_range, 2) if full_range > 0 else 0
-            direction_zh = "阴线" if k1_close < k1_open else ("阳线" if k1_close > k1_open else "平盘")
+            direction_zh = (
+                "阴线" if k1_close < k1_open else ("阳线" if k1_close > k1_open else "平盘")
+            )
             k1_bar_type = bar_analysis.get("bar_type", "")
             k1_desc = (
                 f"K1（最新已收盘）：{direction_zh}，开={k1_open}，高={k1_high}，"
@@ -227,12 +230,16 @@ class FreeChatSession:
                 f"实体={body}（占比{body_ratio:.0%}），上影={upper_wick}，下影={lower_wick}；"
                 f"程序分类：{k1_bar_type}。"
             )
-        recall_parts.append(f"【上次决策结果】{order_type}" + (f"（{order_dir}）" if order_dir else ""))
+        recall_parts.append(
+            f"【上次决策结果】{order_type}" + (f"（{order_dir}）" if order_dir else "")
+        )
         if k1_desc:
             recall_parts.append(f"【K1数据·程序计算】{k1_desc}")
         if reasoning:
             # Truncate to avoid token bloat; the key facts are already in k1_desc
-            recall_parts.append(f"【决策推理摘要】{reasoning[:600]}" + ("…" if len(reasoning) > 600 else ""))
+            recall_parts.append(
+                f"【决策推理摘要】{reasoning[:600]}" + ("…" if len(reasoning) > 600 else "")
+            )
         if watch_points:
             recall_parts.append("【关注点】" + "；".join(watch_points[:3]))
         recall_content = "\n".join(recall_parts)
@@ -319,9 +326,7 @@ class FreeChatSession:
         # ── 2. Resolve reasoning_effort ───────────────────────────────────────
         reasoning_effort = "high"
         if self._settings is not None:
-            reasoning_effort = getattr(
-                self._settings.provider, "reasoning_effort", "high"
-            )
+            reasoning_effort = getattr(self._settings.provider, "reasoning_effort", "high")
 
         # ── 3. Check cancellation before API call ─────────────────────────────
         from pa_agent.ai.deepseek_client import CancelledError
@@ -375,11 +380,13 @@ class FreeChatSession:
 
         # ── 5. Append to history_full (with reasoning preserved) ──────────────
         self._history_full.append({"role": "user", "content": user_text})
-        self._history_full.append({
-            "role": "assistant",
-            "content": reply.content,
-            "reasoning_content": reply.reasoning_content,
-        })
+        self._history_full.append(
+            {
+                "role": "assistant",
+                "content": reply.content,
+                "reasoning_content": reply.reasoning_content,
+            }
+        )
 
         # ── 6. Accumulate usage in ledger ─────────────────────────────────────
         self._ledger.add(reply.usage)

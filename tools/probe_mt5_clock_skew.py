@@ -2,6 +2,7 @@
 
 Run: python tools/probe_mt5_clock_skew.py [SYMBOL] [TIMEFRAME]
 """
+
 from __future__ import annotations
 
 import sys
@@ -51,18 +52,16 @@ def main() -> int:
         rem_local = None
         rem_server = None
         if forming_ts is not None:
-            rem_local = seconds_until_bar_closes(
-                forming_ts, timeframe, now_ms=local_ms
-            )
+            rem_local = seconds_until_bar_closes(forming_ts, timeframe, now_ms=local_ms)
             if server_ms is not None:
-                rem_server = seconds_until_bar_closes(
-                    forming_ts, timeframe, now_ms=server_ms
-                )
+                rem_server = seconds_until_bar_closes(forming_ts, timeframe, now_ms=server_ms)
 
         print(f"symbol={symbol} timeframe={timeframe}")
         print(f"local_now_ms={local_ms}")
         print(f"server_now_ms={server_ms}")
-        print(f"skew_server_minus_local_sec={skew_s:+.1f}" if skew_s is not None else "skew=unknown")
+        print(
+            f"skew_server_minus_local_sec={skew_s:+.1f}" if skew_s is not None else "skew=unknown"
+        )
         print(f"forming_ts_open_ms={forming_ts}")
         print(f"countdown_using_local_now_sec={rem_local}")
         print(f"countdown_using_server_now_sec={rem_server}")

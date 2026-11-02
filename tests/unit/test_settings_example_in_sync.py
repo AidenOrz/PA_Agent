@@ -7,6 +7,7 @@ omitted seven real fields (``kline_adjust``, ``retry_max`` ...). A template
 that disagrees with the code is worse than no template — the README quotes it
 as the source of truth for defaults.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,9 +25,9 @@ def _example() -> dict:
 def test_example_covers_every_setting_group() -> None:
     example = _example()
     expected = set(Settings.model_fields)
-    assert set(example) == expected, (
-        f"settings.example.json groups {sorted(example)} != model groups {sorted(expected)}"
-    )
+    assert (
+        set(example) == expected
+    ), f"settings.example.json groups {sorted(example)} != model groups {sorted(expected)}"
 
 
 def test_example_has_no_unknown_keys() -> None:

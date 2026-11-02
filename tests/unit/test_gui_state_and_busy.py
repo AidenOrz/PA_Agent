@@ -8,6 +8,7 @@
 2. 提交按钮曾无条件 setEnabled(True)，随后又用 button.isEnabled() 判断忙碌，
    构成死分支：按钮永远可点、忙碌判断永远为假，「分析中不能重复提交」失效。
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

@@ -5,6 +5,7 @@ Tasks 14.2 + 14.5:
   - Draws entry/TP/SL horizontal lines when order_type != "不下单".
   - 30 Hz QTimer throttles redraws so the 1 Hz data thread never blocks the UI.
 """
+
 from __future__ import annotations
 
 import math
@@ -168,9 +169,7 @@ class ChartWidget(pg.PlotWidget):
         if entry is not None and tp is not None and sl is not None:
             try:
                 tp2_val = float(tp2) if tp2 is not None else None
-                self._overlay.set_lines(
-                    self, float(entry), float(tp), float(sl), tp2=tp2_val
-                )
+                self._overlay.set_lines(self, float(entry), float(tp), float(sl), tp2=tp2_val)
             except (TypeError, ValueError):
                 self._overlay.clear_lines(self)
         else:
@@ -216,18 +215,17 @@ class ChartWidget(pg.PlotWidget):
                 continue
 
             if kind == "support":
-                color = (34, 197, 94, 180)    # green
-                text_color = (134, 239, 172)   # light green
+                color = (34, 197, 94, 180)  # green
+                text_color = (134, 239, 172)  # light green
             else:
-                color = (245, 158, 11, 180)    # amber
-                text_color = (251, 191, 36)    # yellow
+                color = (245, 158, 11, 180)  # amber
+                text_color = (251, 191, 36)  # yellow
 
             # Draw the midline
             line = pg.InfiniteLine(
                 pos=price,
                 angle=0,
-                pen=pg.mkPen(color=color, width=1,
-                             style=pg.QtCore.Qt.PenStyle.DashLine),
+                pen=pg.mkPen(color=color, width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
                 movable=False,
             )
             plot.addItem(line)

@@ -1,4 +1,5 @@
 """Property-based tests for JsonValidator category classification (task 8.4 / PR7)."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +13,7 @@ validator = strict_test_validator()
 lenient_validator = schema_test_validator()
 
 # ── Minimal valid Stage 1 object ──────────────────────────────────────────────
+
 
 def _valid_stage1() -> dict:
     return {
@@ -95,6 +97,7 @@ def _valid_stage2() -> dict:
 
 
 # ── Category tests ────────────────────────────────────────────────────────────
+
 
 def test_valid_stage1_returns_ok():
     """Valid Stage 1 JSON returns Ok.
@@ -232,9 +235,7 @@ def test_truncated_stage1_after_bar_by_bar_summary_fails_by_default():
     del obj["gate_trace"]
     del obj["gate_result"]
     truncated = json.dumps(obj, ensure_ascii=False)[:-1] + ","
-    strict_no_repair = JsonValidator(
-        ValidationSettings(disable_truncation_repair=True)
-    )
+    strict_no_repair = JsonValidator(ValidationSettings(disable_truncation_repair=True))
     result = strict_no_repair.validate("stage1", truncated)
     assert isinstance(result, ValidationError)
     assert result.category == "a"

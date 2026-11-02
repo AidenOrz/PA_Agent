@@ -1,4 +1,5 @@
 """Event bus for inter-component communication via Qt signals."""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -18,10 +19,10 @@ class EventBus(QObject):
     token_update: emitted with a dict of token/cost update data for Tab2
     """
 
-    data_frame = pyqtSignal(object)    # KlineFrame
-    status = pyqtSignal(str)           # status text
-    exception = pyqtSignal(object)     # AlarmPayload
-    token_update = pyqtSignal(dict)    # token/cost update dict
+    data_frame = pyqtSignal(object)  # KlineFrame
+    status = pyqtSignal(str)  # status text
+    exception = pyqtSignal(object)  # AlarmPayload
+    token_update = pyqtSignal(dict)  # token/cost update dict
 
     def emit_status(self, text: str) -> None:
         """Convenience wrapper — emit a status string."""

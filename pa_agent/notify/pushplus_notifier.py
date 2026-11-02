@@ -2,6 +2,7 @@
 
 文档：https://www.pushplus.plus/doc/ （一键请求 POST /send）
 """
+
 from __future__ import annotations
 
 import logging

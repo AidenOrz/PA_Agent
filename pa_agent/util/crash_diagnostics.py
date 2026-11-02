@@ -1,4 +1,5 @@
 """Fatal crash diagnostics: faulthandler dump file for native/Qt crashes."""
+
 from __future__ import annotations
 
 import faulthandler

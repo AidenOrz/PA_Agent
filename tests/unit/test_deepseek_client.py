@@ -1,4 +1,5 @@
 """Unit tests for DeepSeekClient (task 6.5)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -255,9 +256,7 @@ def test_stream_kkai_passes_thinking_extra_body():
     )
 
     mock_openai = MagicMock()
-    mock_openai.return_value.chat.completions.create.return_value = iter(
-        [chunk_reason, chunk_done]
-    )
+    mock_openai.return_value.chat.completions.create.return_value = iter([chunk_reason, chunk_done])
 
     with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
         reply = client.stream_chat(
@@ -274,6 +273,7 @@ def test_stream_kkai_passes_thinking_extra_body():
 def test_chat_cancel_token_raises():
     """If cancel_token is set, chat() raises CancelledError before calling API."""
     from pa_agent.util.threading import CancelToken
+
     settings = _make_settings()
     client = DeepSeekClient(settings)
 
@@ -292,6 +292,7 @@ def test_chat_cancel_token_raises():
 def test_chat_no_plaintext_key_in_logs(caplog):
     """API key must not appear in log output."""
     import logging
+
     settings = _make_settings(api_key="sk-super-secret-9999")
     client = DeepSeekClient(settings)
 
@@ -304,9 +305,9 @@ def test_chat_no_plaintext_key_in_logs(caplog):
             client.chat([{"role": "user", "content": "hi"}])
 
     for record in caplog.records:
-        assert "sk-super-secret-9999" not in record.getMessage(), (
-            f"Plaintext API key found in log: {record.getMessage()}"
-        )
+        assert (
+            "sk-super-secret-9999" not in record.getMessage()
+        ), f"Plaintext API key found in log: {record.getMessage()}"
 
 
 def test_chat_returns_aireply_fields():
@@ -406,9 +407,7 @@ def test_stream_options_does_not_retry_uncertain_api_error() -> None:
             client.stream_chat([{"role": "user", "content": "hi"}])
 
     mock_openai.return_value.chat.completions.create.assert_called_once()
-    assert not _is_stream_options_unsupported_error(
-        RuntimeError("temporary upstream failure")
-    )
+    assert not _is_stream_options_unsupported_error(RuntimeError("temporary upstream failure"))
 
 
 def test_mimo_chat_sends_enable_thinking_extra_body() -> None:
@@ -461,6 +460,7 @@ def test_mimo_chat_patches_tool_call_messages_before_send() -> None:
 
     sent_messages = mock_openai.return_value.chat.completions.create.call_args.kwargs["messages"]
     assert sent_messages[1]["reasoning_content"] == ""
+
 
 # ── 共享 OpenAI 客户端复用 / 关闭 ─────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 """Load pending analysis JSON records for demo replay."""
+
 from __future__ import annotations
 
 import json

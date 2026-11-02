@@ -1,4 +1,5 @@
 """ConversationWidget — timeline summaries + lazy-loaded detail on select."""
+
 from __future__ import annotations
 
 import logging
@@ -154,9 +155,7 @@ class ConversationWidget(QWidget):
         body.addWidget(self._timeline)
 
         self._detail_stack = QStackedWidget()
-        self._detail_stack.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self._detail_stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._placeholder = QLabel(
             "提交分析后，仅当前进行中的阶段会在此展开；\n"
             "已完成条目在左侧显示摘要，点击可加载全文。"
@@ -221,9 +220,7 @@ class ConversationWidget(QWidget):
         if record.timeline_item is not None:
             summary = record.timeline_summary()
             record.timeline_item.setText(summary)
-            record.timeline_item.setToolTip(
-                f"{record.title}\n{summary}\n（点击加载全文）"
-            )
+            record.timeline_item.setToolTip(f"{record.title}\n{summary}\n（点击加载全文）")
 
     def _register_turn(self, record: _TurnRecord) -> int:
         """Append to timeline only (collapsed until activated or clicked)."""
@@ -248,8 +245,7 @@ class ConversationWidget(QWidget):
             )
         else:
             self._placeholder.setText(
-                "仅当前进行中的阶段会在此自动展开；\n"
-                "历史条目请从左侧点击加载。"
+                "仅当前进行中的阶段会在此自动展开；\n" "历史条目请从左侧点击加载。"
             )
         self._detail_stack.setCurrentIndex(0)
 

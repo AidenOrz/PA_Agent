@@ -6,6 +6,7 @@ uses the raw ``kline`` command and turns its structured result into
 ``KlineBar`` objects.  It deliberately does not make network requests during
 ``connect``; the first CLI invocation may need npx to download its package.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -552,9 +553,7 @@ class WeStockSource(DataSource):
         node = _node_command()
         npx = _npx_command()
         if node is None or npx is None:
-            raise DataSourceTransientError(
-                "WeStock 需要 Node.js >= 18 和 npx，请先安装 Node.js"
-            )
+            raise DataSourceTransientError("WeStock 需要 Node.js >= 18 和 npx，请先安装 Node.js")
         try:
             result = _run_with_tree_cleanup([node, "--version"], timeout=5)
             version_text = (result.stdout or "").strip().lstrip("v")
@@ -622,36 +621,24 @@ class WeStockSource(DataSource):
         if n <= 0:
             return []
         if n > WESTOCK_MAX_BARS:
-            raise DataSourceTransientError(
-                f"WeStock 单次最多返回 {WESTOCK_MAX_BARS} 条 K 线"
-            )
+            raise DataSourceTransientError(f"WeStock 单次最多返回 {WESTOCK_MAX_BARS} 条 K 线")
 
         adjust = str(get_kline_adjust() or "qfq").strip().lower()
         key = (self._symbol, self._timeframe, adjust)
-        ttl = _env_float(
-            "PA_AGENT_WESTOCK_CACHE_TTL_S", 3.0, minimum=0.0, maximum=60.0
-        )
+        ttl = _env_float("PA_AGENT_WESTOCK_CACHE_TTL_S", 3.0, minimum=0.0, maximum=60.0)
         now = time.monotonic()
-        if (
-            self._cache_key == key
-            and len(self._cache_bars) >= n
-            and now - self._cache_ts < ttl
-        ):
+        if self._cache_key == key and len(self._cache_bars) >= n and now - self._cache_ts < ttl:
             return list(self._cache_bars[:n])
 
         npx = self._npx or _npx_command()
         if npx is None:
             raise DataSourceTransientError("找不到 npx，请先安装 Node.js")
         command = build_westock_kline_command(npx, self._symbol, self._timeframe, n)
-        timeout_s = _env_float(
-            "PA_AGENT_WESTOCK_TIMEOUT_S", 30.0, minimum=1.0, maximum=300.0
-        )
+        timeout_s = _env_float("PA_AGENT_WESTOCK_TIMEOUT_S", 30.0, minimum=1.0, maximum=300.0)
         try:
             result = _run_with_tree_cleanup(command, timeout=timeout_s)
         except subprocess.TimeoutExpired as exc:
-            raise DataSourceTransientError(
-                f"WeStock 查询超时（>{timeout_s:g}s）"
-            ) from exc
+            raise DataSourceTransientError(f"WeStock 查询超时（>{timeout_s:g}s）") from exc
         except OSError as exc:
             raise DataSourceTransientError(f"WeStock CLI 启动失败：{exc}") from exc
 
@@ -672,9 +659,7 @@ class WeStockSource(DataSource):
             )
 
         rows = _rows_from_payload(payload)
-        bars = _rows_to_bars(
-            rows, symbol=self._symbol, timeframe=self._timeframe, n=n
-        )
+        bars = _rows_to_bars(rows, symbol=self._symbol, timeframe=self._timeframe, n=n)
         if not bars:
             raise DataSourceTransientError(
                 f"WeStock 未返回有效 K 线：{self._symbol} {self._timeframe}"

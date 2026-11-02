@@ -1,4 +1,5 @@
 """Timed replay of a saved AnalysisRecord through the same UI signals as live analysis."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

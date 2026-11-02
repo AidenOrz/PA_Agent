@@ -1,4 +1,5 @@
 """Unit tests for DecisionPanel next_bar_prediction rendering (T18)."""
+
 from __future__ import annotations
 
 import sys
@@ -6,7 +7,9 @@ import time
 
 import pytest
 
-pytestmark = pytest.mark.skip(reason="Deprecated: DecisionPanel prediction UI moved to FutureTrendPanel")
+pytestmark = pytest.mark.skip(
+    reason="Deprecated: DecisionPanel prediction UI moved to FutureTrendPanel"
+)
 from hypothesis import given
 from hypothesis import settings as h_settings
 from hypothesis import strategies as st
@@ -15,6 +18,7 @@ from PyQt6.QtWidgets import QApplication
 from pa_agent.gui.decision_panel import DecisionPanel, _format_price, _parse_price
 
 # ── QApplication fixture ─────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="module")
 def qapp():
@@ -34,6 +38,7 @@ def panel(qapp):
 
 
 # ── Helper ───────────────────────────────────────────────────────────────────
+
 
 def _valid_no_order() -> dict:
     """Minimal valid stage2 decision with 不下单."""
@@ -205,9 +210,13 @@ _garbage_prediction = st.fixed_dictionaries(
             st.text(max_size=10),
             st.dictionaries(st.text(max_size=10), st.one_of(st.integers(), st.text(), st.none())),
         ),
-        "reasoning": st.one_of(st.none(), st.text(max_size=100), st.integers(), st.lists(st.integers())),
+        "reasoning": st.one_of(
+            st.none(), st.text(max_size=100), st.integers(), st.lists(st.integers())
+        ),
         "unpredictable": st.one_of(st.booleans(), st.none(), st.integers(), st.text(max_size=5)),
-        "features_used": st.one_of(st.none(), st.integers(), st.lists(st.one_of(st.text(), st.integers()))),
+        "features_used": st.one_of(
+            st.none(), st.integers(), st.lists(st.one_of(st.text(), st.integers()))
+        ),
     },
 )
 

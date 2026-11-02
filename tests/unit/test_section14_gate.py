@@ -1,4 +1,5 @@
 """§14 prohibition-scan gate: clause-aware reason parsing."""
+
 from __future__ import annotations
 
 from pa_agent.ai.section14 import (

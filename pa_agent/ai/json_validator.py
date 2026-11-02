@@ -7,6 +7,7 @@ Categories:
   d — plain text (no JSON structure at all)
   e — provider error (quota/billing; non-retryable)
 """
+
 from __future__ import annotations
 
 import json
@@ -41,19 +42,22 @@ _EXPLICIT_S9_TRADABLE_TOKENS = (
 
 # ── Result types ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Ok:
     """Successful validation result."""
+
     obj: dict[str, Any]
 
 
 @dataclass
 class ValidationError:
     """Failed validation result."""
+
     category: Literal["a", "b", "c", "d", "e"]
-    stage: str                          # "stage1" or "stage2"
+    stage: str  # "stage1" or "stage2"
     raw_text: str
-    parse_position: str | None = None   # "line:col" if available
+    parse_position: str | None = None  # "line:col" if available
     missing_fields: list[str] = field(default_factory=list)
     invalid_fields: list[str] = field(default_factory=list)
     allowed_values: dict[str, list] = field(default_factory=dict)
@@ -108,12 +112,12 @@ def _strip_fences(text: str) -> str:
 
     # ── 清洗模型输出的非标准 Unicode 引号 / 控制字符 ──
     _SMART_QUOTE_MAP = {
-        "\u201c": '"',   # " → "
-        "\u201d": '"',   # " → "
-        "\u2018": "'",   # ' → '
-        "\u2019": "'",   # ' → '
-        "\u2013": "-",   # en-dash
-        "\u2014": "-",   # em-dash
+        "\u201c": '"',  # " → "
+        "\u201d": '"',  # " → "
+        "\u2018": "'",  # ' → '
+        "\u2019": "'",  # ' → '
+        "\u2013": "-",  # en-dash
+        "\u2014": "-",  # em-dash
     }
     for bad, good in _SMART_QUOTE_MAP.items():
         t = t.replace(bad, good)
@@ -291,7 +295,7 @@ def _repair_semicolon_separator(text: str) -> str:
             j = i + 1
             while j < n and text[j] in " \t\r\n":
                 j += 1
-            if j < n and text[j] in ('"', '}', ']'):
+            if j < n and text[j] in ('"', "}", "]"):
                 out.append(",")
                 i += 1
                 continue
@@ -301,6 +305,7 @@ def _repair_semicolon_separator(text: str) -> str:
 
 
 # ── Truncated JSON repair ───────────────────────────────────────────────────────
+
 
 def _balance_json_brackets(text: str) -> str:
     """Close unclosed ``{`` / ``[`` outside JSON strings."""
@@ -323,7 +328,9 @@ def _balance_json_brackets(text: str) -> str:
             stack.append("{")
         elif ch == "[":
             stack.append("[")
-        elif (ch == "}" and stack and stack[-1] == "{") or (ch == "]" and stack and stack[-1] == "["):
+        elif (ch == "}" and stack and stack[-1] == "{") or (
+            ch == "]" and stack and stack[-1] == "["
+        ):
             stack.pop()
     closers = "".join("]" if opener == "[" else "}" for opener in reversed(stack))
     return text + closers
@@ -372,6 +379,7 @@ def _try_repair_json_syntax(
 
 # ── JsonValidator ─────────────────────────────────────────────────────────────
 
+
 class JsonValidator:
     """Validates raw AI text against Stage 1 or Stage 2 JSON schemas."""
 
@@ -415,9 +423,9 @@ class JsonValidator:
                 normalization_mode=norm_mode,
                 kline_frame=kline_frame,
                 incremental_new_bar_count=int(incremental_new_bar_count or 0),
-                incremental_previous_stage1=incremental_previous_stage1
-                if incremental_new_bar_count > 0
-                else None,
+                incremental_previous_stage1=(
+                    incremental_previous_stage1 if incremental_new_bar_count > 0 else None
+                ),
             )
         from pa_agent.ai.stage2_normalizer import normalize_stage2
 
@@ -496,9 +504,8 @@ class JsonValidator:
             if obj is None and parse_exc is not None:
                 exc = parse_exc
                 # Stage 2: fail fast on syntax errors (no silent truncation repair).
-                allow_inject = (
-                    stage == "stage1"
-                    and not getattr(self._validation, "disable_truncation_repair", True)
+                allow_inject = stage == "stage1" and not getattr(
+                    self._validation, "disable_truncation_repair", True
                 )
                 repaired = (
                     _try_repair_json_syntax(stripped, stage, allow_tail_inject=allow_inject)
@@ -604,6 +611,7 @@ class JsonValidator:
             # don't cause the whole analysis to fail.
             for msg in auto_fix_bar_by_bar_types(obj, kline_frame=kline_frame):
                 import logging as _logging
+
                 _logging.getLogger(__name__).info("stage1 %s", msg)
 
             if getattr(self._validation, "stage1_coherence_checks", False):
@@ -692,9 +700,7 @@ class JsonValidator:
                 for msg in validate_stage2_trace_consistency(obj):
                     invalid.append(f"trace:{msg}")
                 if isinstance(stage1_json, dict):
-                    for msg in validate_stage2_coherence(
-                        obj, stage1_json, kline_frame=kline_frame
-                    ):
+                    for msg in validate_stage2_coherence(obj, stage1_json, kline_frame=kline_frame):
                         invalid.append(f"s2:{msg}")
             if getattr(self._validation, "trace_semantic_checks", False):
                 from pa_agent.ai.trace_semantic_checks import (
@@ -724,7 +730,11 @@ class JsonValidator:
         else:
             category = "c"
 
-        first_message = errors[0].message[:120] if errors else (invalid[0] if invalid else "custom validation failed")
+        first_message = (
+            errors[0].message[:120]
+            if errors
+            else (invalid[0] if invalid else "custom validation failed")
+        )
         return ValidationError(
             category=category,
             stage=stage,
@@ -829,9 +839,9 @@ class JsonValidator:
             decision,
             decision_stance=decision_stance,
             kline_frame=kline_frame,
-            bar_analysis=obj.get("bar_analysis")
-            if isinstance(obj.get("bar_analysis"), dict)
-            else None,
+            bar_analysis=(
+                obj.get("bar_analysis") if isinstance(obj.get("bar_analysis"), dict) else None
+            ),
         )
 
     @staticmethod
@@ -890,9 +900,13 @@ class JsonValidator:
             if pred.get("cycle") is not None:
                 errors.append("next_cycle_prediction.cycle: must be null when unpredictable=true")
             if pred.get("direction") is not None:
-                errors.append("next_cycle_prediction.direction: must be null when unpredictable=true")
+                errors.append(
+                    "next_cycle_prediction.direction: must be null when unpredictable=true"
+                )
             if pred.get("probabilities") is not None:
-                errors.append("next_cycle_prediction.probabilities: must be null when unpredictable=true")
+                errors.append(
+                    "next_cycle_prediction.probabilities: must be null when unpredictable=true"
+                )
             return errors
 
         # unpredictable=false path
@@ -905,14 +919,14 @@ class JsonValidator:
 
         probs = pred.get("probabilities")
         if not isinstance(probs, dict):
-            return errors + ["next_cycle_prediction.probabilities: must be an object when unpredictable=false"]
+            return errors + [
+                "next_cycle_prediction.probabilities: must be an object when unpredictable=false"
+            ]
 
         for key in CYCLE_ORDER:
             value = probs.get(key)
             if not isinstance(value, int) or not (0 <= value <= 100):
-                errors.append(
-                    f"next_cycle_prediction.probabilities.{key}: must be int in [0, 100]"
-                )
+                errors.append(f"next_cycle_prediction.probabilities.{key}: must be int in [0, 100]")
         if errors:
             return errors
 
@@ -953,7 +967,9 @@ class JsonValidator:
             if pred.get("direction") is not None:
                 errors.append("next_bar_prediction.direction: must be null when unpredictable=true")
             if pred.get("probabilities") is not None:
-                errors.append("next_bar_prediction.probabilities: must be null when unpredictable=true")
+                errors.append(
+                    "next_bar_prediction.probabilities: must be null when unpredictable=true"
+                )
             return errors
 
         # unpredictable=false path
@@ -1024,9 +1040,7 @@ class JsonValidator:
         quality = str(signal_bar.get("quality", "")).strip().lower()
         pattern = str(signal_bar.get("pattern", "") or "").strip().lower()
         pending_entry = (
-            strength == "not_triggered"
-            or freshness == "pending"
-            or entry_bar.get("bar") is None
+            strength == "not_triggered" or freshness == "pending" or entry_bar.get("bar") is None
         )
         order_type = decision.get("order_type")
         planned_without_signal = (
@@ -1080,13 +1094,11 @@ class JsonValidator:
         if kline_frame is not None:
             for label, seq in (("signal_bar", sig_seq), ("entry_bar", entry_seq)):
                 if seq is not None and _bar_by_seq(kline_frame, seq) is None:
-                    errors.append(f"bar_analysis.{label}.bar K{seq} not found in current K-line frame")
+                    errors.append(
+                        f"bar_analysis.{label}.bar K{seq} not found in current K-line frame"
+                    )
 
-        if (
-            not lenient
-            and quality in ("weak", "invalid")
-            and not planned_entry
-        ):
+        if not lenient and quality in ("weak", "invalid") and not planned_entry:
             reasons = _all_stage2_reasons(obj)
             if not any(token in reasons for token in _EXPLICIT_S9_TRADABLE_TOKENS):
                 errors.append(
@@ -1107,12 +1119,7 @@ class JsonValidator:
         # setup stayed tradable.
         if freshness in ("stale", "invalid"):
             errors.append("entry_bar.freshness stale/invalid cannot support a new order")
-        if (
-            not lenient
-            and no_follow
-            and not pending_entry
-            and trade_conf_num >= 50
-        ):
+        if not lenient and no_follow and not pending_entry and trade_conf_num >= 50:
             errors.append(
                 "entry_bar.follow_through=false/failed cannot support trade_confidence >= 50"
             )

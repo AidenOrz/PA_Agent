@@ -2,6 +2,7 @@
 
 Property 1b: data insufficient → zero AI calls, record.exception.type=="insufficient_data".
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -15,9 +16,14 @@ from pa_agent.util.threading import CancelToken, OrchestratorEvent
 
 def _make_bar(seq: int) -> KlineBar:
     return KlineBar(
-        seq=seq, ts_open=float(1_000_000 - seq * 60_000),
-        open=2000.0, high=2010.0, low=1990.0, close=2005.0,
-        volume=1.0, closed=True,
+        seq=seq,
+        ts_open=float(1_000_000 - seq * 60_000),
+        open=2000.0,
+        high=2010.0,
+        low=1990.0,
+        close=2005.0,
+        volume=1.0,
+        closed=True,
     )
 
 
@@ -25,14 +31,20 @@ def _insufficient_frame_19bars() -> KlineFrame:
     n = 19
     bars = tuple(_make_bar(i + 1) for i in range(n))
     return KlineFrame(
-        symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+        symbol="TEST",
+        timeframe="1h",
+        bars=bars,
+        snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(ema20=tuple([2000.0] * n), atr14=tuple([10.0] * n)),
     )
 
 
 def _insufficient_frame_empty() -> KlineFrame:
     return KlineFrame(
-        symbol="TEST", timeframe="1h", bars=(), snapshot_ts_local_ms=1,
+        symbol="TEST",
+        timeframe="1h",
+        bars=(),
+        snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(ema20=(), atr14=()),
     )
 
@@ -41,7 +53,10 @@ def _insufficient_frame_all_nan() -> KlineFrame:
     n = 20
     bars = tuple(_make_bar(i + 1) for i in range(n))
     return KlineFrame(
-        symbol="TEST", timeframe="1h", bars=bars, snapshot_ts_local_ms=1,
+        symbol="TEST",
+        timeframe="1h",
+        bars=bars,
+        snapshot_ts_local_ms=1,
         indicators=IndicatorBundle(
             ema20=tuple([float("nan")] * n),
             atr14=tuple([float("nan")] * n),
@@ -73,11 +88,14 @@ def _make_orchestrator():
     return orch, client, assembler, writer
 
 
-@pytest.mark.parametrize("frame_factory,expected_check", [
-    (_insufficient_frame_19bars, "bar_count_lt_20"),
-    (_insufficient_frame_empty, "bars_empty_or_bad_ohlc"),
-    (_insufficient_frame_all_nan, "indicators_all_nan"),
-])
+@pytest.mark.parametrize(
+    "frame_factory,expected_check",
+    [
+        (_insufficient_frame_19bars, "bar_count_lt_20"),
+        (_insufficient_frame_empty, "bars_empty_or_bad_ohlc"),
+        (_insufficient_frame_all_nan, "indicators_all_nan"),
+    ],
+)
 def test_insufficient_data_zero_ai_calls(frame_factory, expected_check):
     """Property 1b: insufficient data → zero AI calls, record.exception.type == insufficient_data."""
     orch, client, assembler, writer = _make_orchestrator()

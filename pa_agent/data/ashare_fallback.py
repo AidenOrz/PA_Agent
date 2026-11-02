@@ -21,6 +21,7 @@ Public helpers mirror the East Money client contracts:
 All OHLCV rows use ascending time order with volume in lots (shou),
 amount in CNY - identical to eastmoney_client._parse_klines.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -69,9 +70,7 @@ def _zzshare_code(symbol: str) -> str | None:
     if len(digits) < 6:
         return None
     digits = digits[-6:]
-    if raw.startswith("sh") or (
-        not raw.startswith("sz") and digits.startswith(("5", "6", "9"))
-    ):
+    if raw.startswith("sh") or (not raw.startswith("sz") and digits.startswith(("5", "6", "9"))):
         return f"{digits}.SH"
     if digits in {"000300", "000016", "000905", "000852"}:
         return f"{digits}.SH"
@@ -205,9 +204,7 @@ def _tencent_spot_raw(symbol: str) -> list[str] | None:
     if not code:
         return None
     try:
-        resp = _get_with_rate_limit(
-            "tencent", _TENCENT_RT + code, headers=_UA, timeout=6
-        )
+        resp = _get_with_rate_limit("tencent", _TENCENT_RT + code, headers=_UA, timeout=6)
         resp.encoding = "gbk"
         if resp.status_code != 200 or "~" not in resp.text:
             return None
@@ -377,7 +374,9 @@ def tencent_minute(
     except Exception as exc:
         logger.debug("Tencent minute failed for %s: %s", symbol, exc)
         return []
-    start = datetime.strptime(start_date[:19], "%Y-%m-%d %H:%M:%S") if len(start_date) >= 10 else None
+    start = (
+        datetime.strptime(start_date[:19], "%Y-%m-%d %H:%M:%S") if len(start_date) >= 10 else None
+    )
     end = datetime.strptime(end_date[:19], "%Y-%m-%d %H:%M:%S") if len(end_date) >= 10 else None
     return [
         r
@@ -466,10 +465,14 @@ def zzshare_order_book(symbol: str):
     pre_close = _f(row.get("pre_close"))
     pct = ((price - pre_close) / pre_close * 100.0) if pre_close else 0.0
     bids = [
-        OrderBookLevel(price=_f(row.get("bid_price1")), volume=int(_f(row.get("bid_volume1"))) // 100)
+        OrderBookLevel(
+            price=_f(row.get("bid_price1")), volume=int(_f(row.get("bid_volume1"))) // 100
+        )
     ]
     asks = [
-        OrderBookLevel(price=_f(row.get("ask_price1")), volume=int(_f(row.get("ask_volume1"))) // 100)
+        OrderBookLevel(
+            price=_f(row.get("ask_price1")), volume=int(_f(row.get("ask_volume1"))) // 100
+        )
     ]
     return StockOrderBook(
         code=str(row.get("ts_code", code))[:6],
@@ -579,7 +582,9 @@ def zzshare_minute(
             }
         )
     rows.sort(key=lambda r: r["time"])
-    start = datetime.strptime(start_date[:19], "%Y-%m-%d %H:%M:%S") if len(start_date) >= 10 else None
+    start = (
+        datetime.strptime(start_date[:19], "%Y-%m-%d %H:%M:%S") if len(start_date) >= 10 else None
+    )
     end = datetime.strptime(end_date[:19], "%Y-%m-%d %H:%M:%S") if len(end_date) >= 10 else None
     return [
         r

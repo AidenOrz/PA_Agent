@@ -1,4 +1,5 @@
 """Offline tests for the WeStock CLI data source."""
+
 from __future__ import annotations
 
 import json
@@ -156,7 +157,7 @@ def test_latest_snapshot_parses_wrapped_json_and_orders_newest_first(
         '"changePercent":"5.2"},'
         '{"date":"2026-08-05","open":11,"close":12,"high":12.5,"low":10.8,'
         '"volume":1300,"amount":6000}'
-        ']}}\n'
+        "]}}\n"
     )
     calls: list[list[str]] = []
 
@@ -220,8 +221,7 @@ def test_snapshot_cache_avoids_repeated_cli_calls(monkeypatch: pytest.MonkeyPatc
     source = _source()
     source.subscribe("sh600519", "1d")
     payload = (
-        '{"success":true,"data":[{"date":"2026-08-04","open":10,'
-        '"last":11,"high":12,"low":9}]}'
+        '{"success":true,"data":[{"date":"2026-08-04","open":10,' '"last":11,"high":12,"low":9}]}'
     )
     calls = 0
 

@@ -7,6 +7,7 @@ and the orchestrator silently fell back to the default, so the two "analysis
 processes" were never differentiated. These tests pin the current, honest
 behaviour: the field is absent and every mode produces the same Stage 1 rules.
 """
+
 from __future__ import annotations
 
 import pytest

@@ -4,6 +4,7 @@ Directly calls the same JSON endpoints used by quote.eastmoney.com
 (``push2his.eastmoney.com/api/qt/stock/kline/get`` etc.).
 Uses ``curl_cffi`` when available to pass TLS fingerprint checks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -117,6 +118,7 @@ _request_slots = _RequestSlotPool(1)
 
 try:
     from curl_cffi import requests as _http
+
     _IMPERSONATE_OPTIONS: tuple[str | None, ...] = (
         "chrome120",
         "chrome116",
@@ -127,6 +129,7 @@ try:
     )
 except ImportError:
     import requests as _http  # type: ignore[no-redef]
+
     _IMPERSONATE_OPTIONS = (None,)
 
 
@@ -435,9 +438,7 @@ def _fetch_kline(params: dict[str, Any], *, resilient: bool = False) -> list[dic
     kw: dict[str, Any] = {}
     if resilient:
         kw = {"max_rounds": 4, "timeout": 30.0}
-    data = _get_json_on_hosts(
-        _KLINE_HOSTS, "/api/qt/stock/kline/get", params, **kw
-    )
+    data = _get_json_on_hosts(_KLINE_HOSTS, "/api/qt/stock/kline/get", params, **kw)
     klines = (data.get("data") or {}).get("klines") or []
     return _parse_klines(klines)
 
@@ -489,9 +490,7 @@ def _fallback_daily_rows(
     try:
         from pa_agent.data.ashare_fallback import fallback_daily
 
-        return fallback_daily(
-            symbol, start_date=start_date, end_date=end_date, adjust=adjust
-        )
+        return fallback_daily(symbol, start_date=start_date, end_date=end_date, adjust=adjust)
     except Exception as exc:
         logger.debug("daily fallback failed for %s: %s", symbol, exc)
         return []
@@ -577,9 +576,7 @@ def _fallback_minute_rows(
     try:
         from pa_agent.data.ashare_fallback import fallback_minute
 
-        return fallback_minute(
-            symbol, period=str(period), start_date=start_date, end_date=end_date
-        )
+        return fallback_minute(symbol, period=str(period), start_date=start_date, end_date=end_date)
     except Exception as exc:
         logger.debug("minute fallback failed for %s: %s", symbol, exc)
         return []
@@ -664,12 +661,8 @@ def fetch_spot_price(symbol: str) -> float | None:
 
 
 # A-share: 沪深主板 + 创业板 + 科创板 (same fs as quote.eastmoney.com gridlist)
-_CLIST_FS_A_SHARE = (
-    "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
-)
-_CLIST_FIELDS_UNIVERSE = (
-    "f12,f14,f2,f3,f4,f5,f6,f7,f15,f16,f17,f18,f8,f9,f10,f20,f21,f23"
-)
+_CLIST_FS_A_SHARE = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
+_CLIST_FIELDS_UNIVERSE = "f12,f14,f2,f3,f4,f5,f6,f7,f15,f16,f17,f18,f8,f9,f10,f20,f21,f23"
 # clist 单页上限；全市场用分页拉取（比 pz=5000 单请求更稳、进度可更新）
 _CLIST_PAGE_SIZE_DEFAULT = 100
 
@@ -836,7 +829,6 @@ def _spot_row_secid(code: str) -> str:
     if is_index_symbol(code):
         return index_secid(code)
     return f"{_market_prefix_for_code(code)}.{code}"
-
 
 
 def fetch_stock_spot_row(symbol: str) -> dict[str, Any] | None:

@@ -1,4 +1,5 @@
 """Tests for Brooks-aligned trend_context module."""
+
 from __future__ import annotations
 
 from pa_agent.ai.decision_nodes import judge_always_in, judge_direction

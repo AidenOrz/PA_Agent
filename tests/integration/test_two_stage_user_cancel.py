@@ -2,6 +2,7 @@
 
 Task 11.10
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -62,7 +63,10 @@ def test_cancel_before_stage2(frame, pending_writer, assembler, exp_reader):
 
 
 def test_cancel_during_stage1_stream_saves_partial_response(
-    frame, pending_writer, assembler, exp_reader,
+    frame,
+    pending_writer,
+    assembler,
+    exp_reader,
 ):
     cancel_token = CancelToken()
     client = MagicMock()

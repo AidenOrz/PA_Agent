@@ -1,4 +1,5 @@
 """Helpers for locating prior analysis records for incremental runs."""
+
 from __future__ import annotations
 
 import json

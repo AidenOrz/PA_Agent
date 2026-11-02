@@ -1,4 +1,5 @@
 """Unit tests for East Money period parameters (no network)."""
+
 from __future__ import annotations
 
 from pa_agent.data import eastmoney_client

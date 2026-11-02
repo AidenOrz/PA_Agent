@@ -1,4 +1,5 @@
 """Unit tests for PromptAssembler (task 7.3)."""
+
 from __future__ import annotations
 
 import json
@@ -135,7 +136,11 @@ def test_stage2_system_prompt_order(assembler: PromptAssembler):
     """Stage 2 system reuses stage-1 system (persona + binary); user: strategy → risk."""
     frame = _make_frame()
     stage1_json = {"cycle_position": "normal_channel", "direction": "bullish"}
-    strategy_files = ["上涨通道分析识别.txt", "上涨通道交易策略.txt", "文件13-窄通道与宽通道策略.txt"]
+    strategy_files = [
+        "上涨通道分析识别.txt",
+        "上涨通道交易策略.txt",
+        "文件13-窄通道与宽通道策略.txt",
+    ]
     messages = assembler.build_stage2(frame, stage1_json, strategy_files, [])
     system = messages[0]["content"]
     user = messages[1]["content"]
@@ -145,9 +150,9 @@ def test_stage2_system_prompt_order(assembler: PromptAssembler):
     assert pos_persona >= 0
     assert 0 <= pos_persona < pos_binary_sys
 
-    assert "[CONTENT OF 二元决策.txt]" not in user, (
-        "Full binary tree file is not duplicated in stage 2 user turn"
-    )
+    assert (
+        "[CONTENT OF 二元决策.txt]" not in user
+    ), "Full binary tree file is not duplicated in stage 2 user turn"
     assert "[CONTENT OF 二元决策.txt]" in system
     pos_strategy = user.find("上涨通道分析识别")
     pos_bar_by_bar = user.find("逐棒分析检查单")
@@ -268,16 +273,27 @@ def test_stage2_system_prompt_only_matches_build_stage2(assembler: PromptAssembl
 def test_kline_table_contains_nan_as_na(assembler: PromptAssembler):
     """K-line table renders NaN indicator values as 'N/A'."""
     bars = (
-        KlineBar(seq=1, ts_open=1_700_000_000.0, open=2600.0, high=2610.0,
-                 low=2590.0, close=2605.0, volume=1000.0, closed=False),
+        KlineBar(
+            seq=1,
+            ts_open=1_700_000_000.0,
+            open=2600.0,
+            high=2610.0,
+            low=2590.0,
+            close=2605.0,
+            volume=1000.0,
+            closed=False,
+        ),
     )
     indicators = IndicatorBundle(
         ema20=(float("nan"),),
         atr14=(float("nan"),),
     )
     frame = KlineFrame(
-        symbol="XAUUSD", timeframe="1h", bars=bars,
-        indicators=indicators, snapshot_ts_local_ms=1_700_000_000_000,
+        symbol="XAUUSD",
+        timeframe="1h",
+        bars=bars,
+        indicators=indicators,
+        snapshot_ts_local_ms=1_700_000_000_000,
     )
     messages = assembler.build_stage1(frame)
     user = messages[1]["content"]
@@ -621,7 +637,11 @@ def test_stage2_prompt_contains_prediction_instruction(assembler: PromptAssemble
 
     messages_on = assembler._build_stage2_user_prompt(
         frame=frame,
-        stage1_json={"cycle_position": "normal_channel", "direction": "bullish", "gate_result": "proceed"},
+        stage1_json={
+            "cycle_position": "normal_channel",
+            "direction": "bullish",
+            "gate_result": "proceed",
+        },
         strategy_files=[],
         experience_entries=[],
         enable_next_bar_prediction=True,
@@ -637,7 +657,11 @@ def test_previous_prediction_rendered_in_incremental_mode(assembler: PromptAssem
 
     frame = _make_frame()
     stage1_messages = assembler.build_stage1(frame)
-    stage1_json = {"cycle_position": "normal_channel", "direction": "bullish", "gate_result": "proceed"}
+    stage1_json = {
+        "cycle_position": "normal_channel",
+        "direction": "bullish",
+        "gate_result": "proceed",
+    }
 
     previous = AnalysisRecord(
         meta=RecordMeta(
@@ -700,7 +724,11 @@ def test_unpredictable_previous_prediction_renders_note(assembler: PromptAssembl
 
     frame = _make_frame()
     stage1_messages = assembler.build_stage1(frame)
-    stage1_json = {"cycle_position": "normal_channel", "direction": "bullish", "gate_result": "proceed"}
+    stage1_json = {
+        "cycle_position": "normal_channel",
+        "direction": "bullish",
+        "gate_result": "proceed",
+    }
 
     previous = AnalysisRecord(
         meta=RecordMeta(

@@ -1,4 +1,5 @@
 """Unit tests for AkShare data source helpers (no network)."""
+
 from __future__ import annotations
 
 from pa_agent.data.akshare_source import (
@@ -38,12 +39,8 @@ def test_resample_60m_to_4h():
 
 
 def test_akshare_adjust_follows_shared_setting(monkeypatch):
-    monkeypatch.setattr(
-        "pa_agent.data.akshare_source.get_kline_adjust", lambda: "hfq"
-    )
+    monkeypatch.setattr("pa_agent.data.akshare_source.get_kline_adjust", lambda: "hfq")
     assert _akshare_adjust() == "hfq"
 
-    monkeypatch.setattr(
-        "pa_agent.data.akshare_source.get_kline_adjust", lambda: "none"
-    )
+    monkeypatch.setattr("pa_agent.data.akshare_source.get_kline_adjust", lambda: "none")
     assert _akshare_adjust() == ""

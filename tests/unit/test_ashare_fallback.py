@@ -5,6 +5,7 @@
 - fallback_* 链式降级的短路与跳过语义。
 - eastmoney_client 四个接入点（日线/分钟/盘口/现价）在东财失败或返回空时改走替补源。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -91,7 +92,9 @@ def _bar(day: int) -> dict:
     return {"time": datetime(2026, 10, day), "open": 1.0, "close": 1.0, "high": 1.0, "low": 1.0}
 
 
-def test_fetch_stock_daily_uses_fallback_on_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_stock_daily_uses_fallback_on_transient_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def boom(params):
         raise em.EastMoneyTransientError("down")
 

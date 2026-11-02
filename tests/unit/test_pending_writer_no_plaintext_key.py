@@ -13,6 +13,7 @@ Then verifies that save_full() and save_partial() produce files that:
 append_followup() writes the user question and model answer verbatim, so it
 takes the same masking path as save_full()/save_partial().
 """
+
 from __future__ import annotations
 
 import json
@@ -43,9 +44,7 @@ def _make_record_with_key(api_key: str) -> AnalysisRecord:
         kline_data=[],
         htf_text="some htf context",
         # api_key embedded in a message content string
-        stage1_messages=[
-            {"role": "user", "content": f"Authorization: Bearer {api_key}"}
-        ],
+        stage1_messages=[{"role": "user", "content": f"Authorization: Bearer {api_key}"}],
         stage1_response=None,
         stage1_diagnosis=None,
         stage2_messages=[],
@@ -62,6 +61,7 @@ def _make_record_with_key(api_key: str) -> AnalysisRecord:
 # save_full — no plaintext key in written file
 # ---------------------------------------------------------------------------
 
+
 class TestSaveFullNoPlaIntextKey:
     def test_plaintext_key_absent_from_file(self, tmp_path: Path) -> None:
         """save_full must not write the plaintext API key to disk."""
@@ -71,9 +71,7 @@ class TestSaveFullNoPlaIntextKey:
         path = writer.save_full(record)
         content = path.read_text(encoding="utf-8")
 
-        assert API_KEY not in content, (
-            f"Plaintext API key found in {path.name}"
-        )
+        assert API_KEY not in content, f"Plaintext API key found in {path.name}"
 
     def test_masked_key_present_in_file(self, tmp_path: Path) -> None:
         """save_full must replace the plaintext key with its masked form."""
@@ -84,9 +82,9 @@ class TestSaveFullNoPlaIntextKey:
         content = path.read_text(encoding="utf-8")
         expected_mask = mask_secret(API_KEY)
 
-        assert expected_mask in content, (
-            f"Expected masked key '{expected_mask}' not found in {path.name}"
-        )
+        assert (
+            expected_mask in content
+        ), f"Expected masked key '{expected_mask}' not found in {path.name}"
 
     def test_key_sanitized_in_ai_provider_dict(self, tmp_path: Path) -> None:
         """The api_key field inside meta.ai_provider must be masked."""
@@ -117,6 +115,7 @@ class TestSaveFullNoPlaIntextKey:
 # save_partial — no plaintext key in written file
 # ---------------------------------------------------------------------------
 
+
 class TestSavePartialNoPlaIntextKey:
     def test_plaintext_key_absent_from_file(self, tmp_path: Path) -> None:
         """save_partial must not write the plaintext API key to disk."""
@@ -126,9 +125,7 @@ class TestSavePartialNoPlaIntextKey:
         path = writer.save_partial(record, reason="test")
         content = path.read_text(encoding="utf-8")
 
-        assert API_KEY not in content, (
-            f"Plaintext API key found in {path.name}"
-        )
+        assert API_KEY not in content, f"Plaintext API key found in {path.name}"
 
     def test_masked_key_present_in_file(self, tmp_path: Path) -> None:
         """save_partial must replace the plaintext key with its masked form."""
@@ -139,9 +136,9 @@ class TestSavePartialNoPlaIntextKey:
         content = path.read_text(encoding="utf-8")
         expected_mask = mask_secret(API_KEY)
 
-        assert expected_mask in content, (
-            f"Expected masked key '{expected_mask}' not found in {path.name}"
-        )
+        assert (
+            expected_mask in content
+        ), f"Expected masked key '{expected_mask}' not found in {path.name}"
 
     def test_partial_reason_preserved(self, tmp_path: Path) -> None:
         """save_partial must still write the _partial_reason field."""
@@ -182,6 +179,7 @@ class TestSavePartialNoPlaIntextKey:
 # Sanity check: mask_secret produces a meaningful masked form for our key
 # ---------------------------------------------------------------------------
 
+
 def test_mask_secret_produces_meaningful_mask() -> None:
     """Verify the test key is long enough for mask_secret to produce a real mask."""
     masked = mask_secret(API_KEY)
@@ -207,6 +205,7 @@ def _make_turn(*, user: str) -> FollowupTurn:
         ai_reasoning=None,
         usage={"prompt_tokens": 0, "completion_tokens": 0},
     )
+
 
 class TestAppendFollowupNoPlaintextKey:
     def test_plaintext_key_absent_from_sidecar(self, tmp_path: Path) -> None:

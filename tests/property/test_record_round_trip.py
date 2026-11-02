@@ -12,6 +12,7 @@ deserialization cycle with deep equality, including:
   - optional fields both present and absent (None)
   - nested dicts, lists, and string fields
 """
+
 from __future__ import annotations
 
 import json
@@ -148,6 +149,7 @@ def analysis_record_st(draw: st.DrawFn) -> AnalysisRecord:
 
 
 # ── Property ──────────────────────────────────────────────────────────────────
+
 
 @given(analysis_record_st())
 @h_settings(max_examples=100)

@@ -6,6 +6,7 @@ test died with AttributeError.  Even with settings patched in, the submit path
 short-circuited on "数据源未连接" and the pipeline never ran, so the assertion
 failed for an unrelated reason.  One helper keeps the wiring in a single place.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

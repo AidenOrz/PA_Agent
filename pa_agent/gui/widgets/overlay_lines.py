@@ -1,4 +1,5 @@
 """Overlay horizontal lines for entry / TP / SL on a pyqtgraph PlotWidget."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -10,10 +11,10 @@ if TYPE_CHECKING:
     from pyqtgraph import PlotItem
 
 # Line colors
-_COLOR_ENTRY = QColor(30, 144, 255)   # dodger blue
-_COLOR_TP = QColor(0, 200, 80)        # green
-_COLOR_TP2 = QColor(100, 220, 140)    # lighter green
-_COLOR_SL = QColor(220, 50, 50)       # red
+_COLOR_ENTRY = QColor(30, 144, 255)  # dodger blue
+_COLOR_TP = QColor(0, 200, 80)  # green
+_COLOR_TP2 = QColor(100, 220, 140)  # lighter green
+_COLOR_SL = QColor(220, 50, 50)  # red
 
 
 class OverlayLines:

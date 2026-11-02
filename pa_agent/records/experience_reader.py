@@ -13,6 +13,7 @@ Example filename:
 
 This module is strictly read-only — it never writes or deletes files.
 """
+
 from __future__ import annotations
 
 import json
@@ -69,6 +70,7 @@ class ExperienceReader:
     ) -> None:
         if experience_dir is None:
             from pa_agent.config.paths import EXPERIENCE_DIR
+
             experience_dir = EXPERIENCE_DIR
 
         self._experience_dir = experience_dir
@@ -160,9 +162,7 @@ class ExperienceReader:
             return []
 
         dir_norm = str(direction or "").strip().lower()
-        pattern_set = {
-            str(p).strip().lower() for p in (patterns or []) if str(p).strip()
-        }
+        pattern_set = {str(p).strip().lower() for p in (patterns or []) if str(p).strip()}
 
         def _score(entry: ExperienceEntry) -> int:
             content = entry.content if isinstance(entry.content, dict) else {}
@@ -172,9 +172,7 @@ class ExperienceReader:
                 score += 2
             ent_patterns = content.get("detected_patterns") or []
             if pattern_set and isinstance(ent_patterns, list):
-                overlap = pattern_set.intersection(
-                    {str(p).strip().lower() for p in ent_patterns}
-                )
+                overlap = pattern_set.intersection({str(p).strip().lower() for p in ent_patterns})
                 score += len(overlap)
             return score
 
@@ -196,12 +194,8 @@ class ExperienceReader:
             text = path.read_text(encoding="utf-8")
             return json.loads(text)
         except OSError as exc:
-            self._logger.warning(
-                "ExperienceReader: cannot read file %s: %s", path, exc
-            )
+            self._logger.warning("ExperienceReader: cannot read file %s: %s", path, exc)
             return None
         except json.JSONDecodeError as exc:
-            self._logger.warning(
-                "ExperienceReader: invalid JSON in file %s: %s", path, exc
-            )
+            self._logger.warning("ExperienceReader: invalid JSON in file %s: %s", path, exc)
             return None

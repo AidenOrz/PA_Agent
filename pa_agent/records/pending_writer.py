@@ -6,6 +6,7 @@ File naming convention:
 
 Disk failures are logged and emitted to the event bus but never propagated.
 """
+
 from __future__ import annotations
 
 import json
@@ -66,6 +67,7 @@ class PendingWriter:
     ) -> None:
         if pending_dir is None:
             from pa_agent.config.paths import RECORDS_PENDING_DIR
+
             pending_dir = RECORDS_PENDING_DIR
 
         self._pending_dir = pending_dir
@@ -220,13 +222,9 @@ class PendingWriter:
 
     def _handle_disk_error(self, exc: OSError, path: Path) -> None:
         """Log the error and optionally emit to the event bus."""
-        self._logger.error(
-            "PendingWriter: disk error writing %s: %s", path, exc
-        )
+        self._logger.error("PendingWriter: disk error writing %s: %s", path, exc)
         if self._event_bus is not None:
             try:
                 self._event_bus.emit("disk_error", {"path": str(path), "error": str(exc)})
             except Exception as bus_exc:
-                self._logger.error(
-                    "PendingWriter: event_bus emit failed: %s", bus_exc
-                )
+                self._logger.error("PendingWriter: event_bus emit failed: %s", bus_exc)

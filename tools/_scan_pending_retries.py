@@ -1,4 +1,5 @@
 """Scan records/pending for validation retries."""
+
 from __future__ import annotations
 
 import json

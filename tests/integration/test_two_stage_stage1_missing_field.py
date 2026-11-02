@@ -2,6 +2,7 @@
 
 Task 11.6
 """
+
 from __future__ import annotations
 
 import json

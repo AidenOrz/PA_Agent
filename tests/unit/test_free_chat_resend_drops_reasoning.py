@@ -3,6 +3,7 @@ history_for_api but preserves it in history_full.
 
 Task 12.4 — Validates: Requirements R11.4, R11.5
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -14,6 +15,7 @@ from pa_agent.util.threading import CancelToken
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_reply(content: str = "AI response", reasoning: str = "AI reasoning") -> MagicMock:
     """Build a mock AIReply."""
@@ -82,6 +84,7 @@ def _make_session(client: MagicMock) -> FreeChatSession:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestFreeChatResendDropsReasoning:
     """Default keep_reasoning_in_resend=False: reasoning stripped from API calls."""
 
@@ -113,9 +116,9 @@ class TestFreeChatResendDropsReasoning:
             messages: list[dict] = call_args[0][0]
             for msg in messages:
                 if msg.get("role") == "assistant":
-                    assert "reasoning_content" not in msg, (
-                        f"reasoning_content found in assistant message: {msg}"
-                    )
+                    assert (
+                        "reasoning_content" not in msg
+                    ), f"reasoning_content found in assistant message: {msg}"
 
     def test_history_full_preserves_reasoning_content(self):
         """history_full must retain reasoning_content for all assistant turns."""
@@ -132,14 +135,12 @@ class TestFreeChatResendDropsReasoning:
         session.send("question 2", cancel)
         session.send("question 3", cancel)
 
-        assistant_msgs = [
-            m for m in session.history_full if m.get("role") == "assistant"
-        ]
+        assistant_msgs = [m for m in session.history_full if m.get("role") == "assistant"]
         assert len(assistant_msgs) == 3
         for i, msg in enumerate(assistant_msgs, start=1):
-            assert "reasoning_content" in msg, (
-                f"Turn {i} assistant message missing reasoning_content"
-            )
+            assert (
+                "reasoning_content" in msg
+            ), f"Turn {i} assistant message missing reasoning_content"
             assert msg["reasoning_content"] == f"reasoning {i}"
 
     def test_followup_history_has_no_reasoning_by_default(self):

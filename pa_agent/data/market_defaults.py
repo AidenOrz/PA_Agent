@@ -1,4 +1,5 @@
 """Default gold (XAU) and A-share identifiers across data sources."""
+
 from __future__ import annotations
 
 import re
@@ -83,9 +84,7 @@ TV_ASHARE_EXCHANGE_ALIASES: frozenset[str] = TV_ASHARE_EXCHANGES | frozenset(
 TV_HK_EXCHANGE = "HKEX"
 TV_HK_EXCHANGES: frozenset[str] = frozenset({TV_HK_EXCHANGE, "HK", "HKG", "HONGKONG"})
 TV_EQUITY_EXCHANGES: frozenset[str] = TV_ASHARE_EXCHANGES | TV_HK_EXCHANGES
-TV_SSE_INDEX_CODES: frozenset[str] = frozenset(
-    {"000016", "000300", "000905", "000852"}
-)
+TV_SSE_INDEX_CODES: frozenset[str] = frozenset({"000016", "000300", "000905", "000852"})
 
 
 def _looks_like_ashare_code(code: str) -> bool:
@@ -195,9 +194,7 @@ def infer_ashare_tv_exchange(code: str) -> str:
     # STAR 科创板 (688/689) — TradingView 仅 SSE，填 SZSE 会 0 根 K 线
     if code.startswith(("688", "689")):
         return "SSE"
-    if code in TV_SSE_INDEX_CODES or code.startswith(
-        ("5", "600", "601", "603", "605", "900")
-    ):
+    if code in TV_SSE_INDEX_CODES or code.startswith(("5", "600", "601", "603", "605", "900")):
         return "SSE"
     if code.startswith(("399", "300", "301", "002", "003", "001")):
         return "SZSE"

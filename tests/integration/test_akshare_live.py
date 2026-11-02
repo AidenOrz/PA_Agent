@@ -1,4 +1,5 @@
 """Live AkShare smoke tests (network required). Baostock fallback disabled."""
+
 from __future__ import annotations
 
 import time

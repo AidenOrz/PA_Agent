@@ -1,4 +1,5 @@
 """Detect stage-2 order opportunities and format alert text."""
+
 from __future__ import annotations
 
 import logging
@@ -136,31 +137,23 @@ def play_order_alert_sound() -> bool:
                 try:
                     winsound.PlaySound(
                         path,
-                        winsound.SND_FILENAME
-                        | winsound.SND_ASYNC
-                        | winsound.SND_NODEFAULT,
+                        winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
                     )
                     attempted.set()
                     return
                 except Exception as exc:
-                    logger.debug(
-                        "order alert PlaySound file %s failed: %s", path, exc
-                    )
+                    logger.debug("order alert PlaySound file %s failed: %s", path, exc)
 
             for alias in ("SystemExclamation", "SystemHand", "SystemAsterisk"):
                 try:
                     winsound.PlaySound(
                         alias,
-                        winsound.SND_ALIAS
-                        | winsound.SND_ASYNC
-                        | winsound.SND_NODEFAULT,
+                        winsound.SND_ALIAS | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
                     )
                     attempted.set()
                     return
                 except Exception as exc:
-                    logger.debug(
-                        "order alert PlaySound alias %s failed: %s", alias, exc
-                    )
+                    logger.debug("order alert PlaySound alias %s failed: %s", alias, exc)
 
             try:
                 winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
@@ -179,7 +172,5 @@ def play_order_alert_sound() -> bool:
         except Exception as exc:
             logger.debug("order alert QApplication.beep failed: %s", exc)
 
-    threading.Thread(
-        target=_play, name="order-alert-sound", daemon=True
-    ).start()
+    threading.Thread(target=_play, name="order-alert-sound", daemon=True).start()
     return True

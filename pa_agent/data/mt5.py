@@ -9,6 +9,7 @@ Usage:
     source.subscribe("XAUUSD", "1h")
     bars = source.latest_snapshot(200)      # newest-first, bars[0] = forming bar
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,23 +25,23 @@ logger = logging.getLogger(__name__)
 
 # Map our timeframe strings → MT5 TIMEFRAME constants (by name)
 _TF_MAP: dict[str, str] = {
-    "1m":  "TIMEFRAME_M1",
-    "2m":  "TIMEFRAME_M2",
-    "3m":  "TIMEFRAME_M3",
-    "5m":  "TIMEFRAME_M5",
+    "1m": "TIMEFRAME_M1",
+    "2m": "TIMEFRAME_M2",
+    "3m": "TIMEFRAME_M3",
+    "5m": "TIMEFRAME_M5",
     "10m": "TIMEFRAME_M10",
     "15m": "TIMEFRAME_M15",
     "30m": "TIMEFRAME_M30",
-    "1h":  "TIMEFRAME_H1",
-    "2h":  "TIMEFRAME_H2",
-    "3h":  "TIMEFRAME_H3",
-    "4h":  "TIMEFRAME_H4",
-    "6h":  "TIMEFRAME_H6",
-    "8h":  "TIMEFRAME_H8",
+    "1h": "TIMEFRAME_H1",
+    "2h": "TIMEFRAME_H2",
+    "3h": "TIMEFRAME_H3",
+    "4h": "TIMEFRAME_H4",
+    "6h": "TIMEFRAME_H6",
+    "8h": "TIMEFRAME_H8",
     "12h": "TIMEFRAME_H12",
-    "1d":  "TIMEFRAME_D1",
-    "1w":  "TIMEFRAME_W1",
-    "1M":  "TIMEFRAME_MN1",
+    "1d": "TIMEFRAME_D1",
+    "1w": "TIMEFRAME_W1",
+    "1M": "TIMEFRAME_MN1",
 }
 
 
@@ -78,7 +79,9 @@ class MT5Source(DataSource):
         if info is not None:
             logger.info(
                 "MT5 connected: terminal=%s, build=%s, connected=%s",
-                info.name, info.build, info.connected,
+                info.name,
+                info.build,
+                info.connected,
             )
         else:
             logger.info("MT5 connected (terminal info unavailable)")
@@ -90,6 +93,7 @@ class MT5Source(DataSource):
         if self._connected:
             try:
                 import MetaTrader5 as mt5  # type: ignore[import]
+
                 mt5.shutdown()
             except Exception as exc:
                 logger.warning("MT5 shutdown error: %s", exc)
@@ -107,6 +111,7 @@ class MT5Source(DataSource):
             return True
         try:
             import MetaTrader5 as mt5  # type: ignore[import]
+
             return mt5.symbol_info(name) is not None
         except Exception as exc:
             logger.debug("MT5 symbol_info(%s) failed: %s", name, exc)
@@ -115,10 +120,20 @@ class MT5Source(DataSource):
     def list_symbols(self) -> list[str]:
         """Return all symbols available in the MT5 terminal."""
         if not self._connected:
-            return ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
-                    "AUDUSD", "USDCAD", "NZDUSD", "XAGUSD"]
+            return [
+                "XAUUSD",
+                "EURUSD",
+                "GBPUSD",
+                "USDJPY",
+                "USDCHF",
+                "AUDUSD",
+                "USDCAD",
+                "NZDUSD",
+                "XAGUSD",
+            ]
         try:
             import MetaTrader5 as mt5  # type: ignore[import]
+
             symbols = mt5.symbols_get()
             if symbols:
                 return [s.name for s in symbols]
@@ -134,8 +149,7 @@ class MT5Source(DataSource):
     def subscribe(self, symbol: str, timeframe: str) -> None:
         if timeframe not in _TF_MAP:
             raise ValueError(
-                f"Unsupported timeframe: {timeframe!r}. "
-                f"Use one of {list(_TF_MAP)}"
+                f"Unsupported timeframe: {timeframe!r}. " f"Use one of {list(_TF_MAP)}"
             )
         self._symbol = symbol
         self._timeframe = timeframe
@@ -143,6 +157,7 @@ class MT5Source(DataSource):
         if self._connected:
             try:
                 import MetaTrader5 as mt5  # type: ignore[import]
+
                 mt5.symbol_select(symbol, True)
             except Exception:
                 pass
@@ -203,9 +218,7 @@ class MT5Source(DataSource):
         try:
             tf_const = getattr(mt5, tf_name)
         except AttributeError as exc:
-            raise DataSourceTransientError(
-                f"MT5 timeframe constant {tf_name!r} not found"
-            ) from exc
+            raise DataSourceTransientError(f"MT5 timeframe constant {tf_name!r} not found") from exc
 
         # Ensure the symbol is selected/subscribed in MT5 for real-time data
         try:
@@ -219,8 +232,7 @@ class MT5Source(DataSource):
         if rates is None or len(rates) == 0:
             error = mt5.last_error()
             raise DataSourceTransientError(
-                f"MT5 copy_rates_from_pos failed for {self._symbol} {self._timeframe}: "
-                f"{error}"
+                f"MT5 copy_rates_from_pos failed for {self._symbol} {self._timeframe}: " f"{error}"
             )
 
         # copy_rates_from_pos returns oldest-first (ascending time order).

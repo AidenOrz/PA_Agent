@@ -1,4 +1,5 @@
 """A-share limit-up / limit-down detection for table and chart markers."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

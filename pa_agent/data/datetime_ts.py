@@ -1,4 +1,5 @@
 """Timezone-safe datetime ↔ epoch helpers for market data sources."""
+
 from __future__ import annotations
 
 import calendar
@@ -19,9 +20,9 @@ def naive_local_to_utc(dt: datetime) -> datetime:
 def datetime_to_ts_ms(dt: object) -> int:
     """Convert a datetime or pandas Timestamp to epoch milliseconds (UTC).
 
-  - Timezone-aware values are converted to UTC before epoch conversion.
-  - Naive values are treated as UTC wall clock (no ``datetime.timestamp()`` local
-    shift), matching MT5 server-time semantics used elsewhere in the project.
+    - Timezone-aware values are converted to UTC before epoch conversion.
+    - Naive values are treated as UTC wall clock (no ``datetime.timestamp()`` local
+      shift), matching MT5 server-time semantics used elsewhere in the project.
     """
     if dt is None:
         return int(_time.time() * 1000)

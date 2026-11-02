@@ -1,4 +1,5 @@
 """Normalize common Stage 1 AI JSON variants before schema validation."""
+
 from __future__ import annotations
 
 import copy
@@ -94,24 +95,32 @@ _CONTEXT_EFFECT_ALIASES: dict[str, str] = {
     "strengthen_bear": "strengthens_bear",
     "strengthens_bull": "strengthens_bull",
     "strengthens_bear": "strengthens_bear",
-    "strengthens_bulls": "strengthens_bull",   # AI typo: extra 's'
-    "strengthens_bears": "strengthens_bear",   # AI typo: extra 's'
+    "strengthens_bulls": "strengthens_bull",  # AI typo: extra 's'
+    "strengthens_bears": "strengthens_bear",  # AI typo: extra 's'
     "weakens_bull": "weakens_bull",
     "weakens_bear": "weakens_bear",
     "weaken_bull": "weakens_bull",
     "weaken_bear": "weakens_bear",
     "weakened_bull": "weakened_bull",
     "weakened_bear": "weakened_bear",
-    "weakens_bulls": "weakens_bull",           # AI typo: extra 's'
-    "weakens_bears": "weakens_bear",           # AI typo: extra 's'
+    "weakens_bulls": "weakens_bull",  # AI typo: extra 's'
+    "weakens_bears": "weakens_bear",  # AI typo: extra 's'
     "neutral": "neutral",
     "transition": "transition",
 }
 
-_BAR_TYPE_ENUM = frozenset({
-    "trend_bull", "trend_bear", "doji", "inside",
-    "outside_bull", "outside_bear", "flat", "other",
-})
+_BAR_TYPE_ENUM = frozenset(
+    {
+        "trend_bull",
+        "trend_bear",
+        "doji",
+        "inside",
+        "outside_bull",
+        "outside_bear",
+        "flat",
+        "other",
+    }
+)
 _BAR_TYPE_ALIASES: dict[str, str] = {
     "ine": "inside",
     "ins": "inside",
@@ -478,9 +487,7 @@ def _fill_incremental_delta(
 
     summary = str(delta.get("summary", "") or "").strip()
     if len(summary) < 1:
-        from_rw = _incremental_summary_from_risk_warning(
-            str(out.get("risk_warning", "") or "")
-        )
+        from_rw = _incremental_summary_from_risk_warning(str(out.get("risk_warning", "") or ""))
         if from_rw:
             delta["summary"] = from_rw
         else:
@@ -533,6 +540,7 @@ def normalize_stage1(
     if kline_frame is not None:
         try:
             from pa_agent.ai.decision_nodes import DecisionNodeEngine
+
             DecisionNodeEngine.apply_stage1(out, kline_frame)
         except Exception as exc:
             logger.warning("DecisionNodeEngine.apply_stage1 failed: %s", exc)

@@ -1,4 +1,5 @@
 """Integration: Stage1 gate wait short-circuits Stage2 API call."""
+
 from __future__ import annotations
 
 import copy
@@ -13,7 +14,10 @@ from .conftest import VALID_STAGE1, make_reply
 
 
 def test_gate_wait_skips_stage2_chat(
-    frame, pending_writer, assembler, exp_reader,
+    frame,
+    pending_writer,
+    assembler,
+    exp_reader,
 ) -> None:
     stage1_wait = copy.deepcopy(VALID_STAGE1)
     stage1_wait["gate_result"] = "wait"

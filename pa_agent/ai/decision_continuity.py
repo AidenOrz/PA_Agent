@@ -1,4 +1,5 @@
 """Previous-decision continuity: invalidation checks, flip cooldown, Stage-2 prompt block."""
+
 from __future__ import annotations
 
 import csv
@@ -306,15 +307,17 @@ def render_continuity_prompt_block(ctx: dict[str, Any]) -> str:
                 "- 当前 §2.4 **非** Always In → §9.0P 计划型限价默认 **wait**；"
                 "仅当出现与 §2.4 方向一致的强信号棒（§9.0=是）才可下单。"
             )
-        neutral_lines.extend([
-            "",
-            "### B. 同结构位反手冷却",
-            f"- 若上一轮有可执行方案且**未失效**，{ctx.get('cooldown_bars', 3)} 根已收盘 K 线内，"
-            "禁止在**同一结构位**（entry 相差≤3跳）提出**反向**新方案；"
-            "除非 K1 **收盘**突破上一轮 `invalidation_condition` / 止损结构位。",
-            "",
-            "（本轮无上一轮下单方案记录，仅适用 A/B 通用规则。）",
-        ])
+        neutral_lines.extend(
+            [
+                "",
+                "### B. 同结构位反手冷却",
+                f"- 若上一轮有可执行方案且**未失效**，{ctx.get('cooldown_bars', 3)} 根已收盘 K 线内，"
+                "禁止在**同一结构位**（entry 相差≤3跳）提出**反向**新方案；"
+                "除非 K1 **收盘**突破上一轮 `invalidation_condition` / 止损结构位。",
+                "",
+                "（本轮无上一轮下单方案记录，仅适用 A/B 通用规则。）",
+            ]
+        )
         return "\n".join(neutral_lines)
 
     prev = ctx.get("previous_decision") or {}
@@ -360,10 +363,12 @@ def render_continuity_prompt_block(ctx: dict[str, Any]) -> str:
     if direction != "neutral":
         lines.append(f"   - （本轮 direction={direction}，neutral 约束不适用。）")
 
-    lines.extend([
-        "",
-        "若确需覆盖上述连续性规则，须在 `decision.reasoning` **首句**写明「连续性覆盖」及 K 线收盘证据。",
-    ])
+    lines.extend(
+        [
+            "",
+            "若确需覆盖上述连续性规则，须在 `decision.reasoning` **首句**写明「连续性覆盖」及 K 线收盘证据。",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -501,11 +506,7 @@ def audit_relation_fields(
         prev_invalidated=invalidated,
         same_structure=same_struct,
     )
-    if (
-        rel_key == _REL_FLIP
-        and bars_since > cooldown_bars
-        and not same_struct
-    ):
+    if rel_key == _REL_FLIP and bars_since > cooldown_bars and not same_struct:
         rel_key = _REL_SAME  # flip at different structure — label as new setup
 
     return {

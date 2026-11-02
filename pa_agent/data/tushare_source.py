@@ -1,4 +1,5 @@
 """Tushare-based A-share K-line data source."""
+
 from __future__ import annotations
 
 import logging
@@ -262,9 +263,7 @@ class TushareSource(DataSource):
         key = (self._symbol, self._timeframe, fetch_n)
         now = time.monotonic()
         if self._is_minute_timeframe():
-            cache_ttl_s = _MINUTE_CACHE_TTL_S.get(
-                self._timeframe, _DEFAULT_MINUTE_CACHE_TTL_S
-            )
+            cache_ttl_s = _MINUTE_CACHE_TTL_S.get(self._timeframe, _DEFAULT_MINUTE_CACHE_TTL_S)
         else:
             cache_ttl_s = _DAILY_CACHE_TTL_S
         if self._cache_key == key and self._cache_bars and now - self._cache_time < cache_ttl_s:

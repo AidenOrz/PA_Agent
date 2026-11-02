@@ -1,4 +1,5 @@
 """Tests for data source factory and settings."""
+
 from __future__ import annotations
 
 from pa_agent.config.settings import GeneralSettings

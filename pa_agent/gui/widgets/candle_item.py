@@ -1,4 +1,5 @@
 """Self-drawn candlestick item for pyqtgraph."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 # Candle colors — brighter for better contrast on dark backgrounds
 # close >= open → price went UP → green
 # close <  open → price went DOWN → red
-_COLOR_UP = QColor(0, 208, 132)    # #00d084  vivid green
+_COLOR_UP = QColor(0, 208, 132)  # #00d084  vivid green
 _COLOR_DOWN = QColor(255, 71, 87)  # #ff4757  vivid red
 
 # Candle body width as a fraction of the x-spacing (0..1)

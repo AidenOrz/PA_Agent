@@ -1,4 +1,5 @@
 """Regression tests for lenient validation auto-fixes from pending-record failures."""
+
 from __future__ import annotations
 
 import json
@@ -42,7 +43,15 @@ def test_stage1_normalizer_maps_moderate_transition_risk() -> None:
         ],
         "gate_result": "proceed",
         "bar_analysis": {"signal_bar": {"quality": "moderate"}},
-        "bar_by_bar_summary": [{"bar": "K1", "bar_type": "doji", "role": "noise", "context_effect": "neutral", "reason": "x"}],
+        "bar_by_bar_summary": [
+            {
+                "bar": "K1",
+                "bar_type": "doji",
+                "role": "noise",
+                "context_effect": "neutral",
+                "reason": "x",
+            }
+        ],
     }
     out = normalize_stage1(raw, normalization_mode="lenient")
     assert out["transition_risk"] == "medium"

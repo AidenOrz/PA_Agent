@@ -1,4 +1,5 @@
 """Property-based tests for mask_secret (task 3.4 / PR6)."""
+
 from __future__ import annotations
 
 from hypothesis import given

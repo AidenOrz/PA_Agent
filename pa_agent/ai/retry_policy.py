@@ -1,4 +1,5 @@
 """Validation retry policy: which errors may retry and immutable field guards."""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -114,8 +115,16 @@ def detect_cheat(
             violations.append(f"{key}: {b!r} → {a!r}")
 
     if stage == "stage2":
-        bsum = before.get("diagnosis_summary") if isinstance(before.get("diagnosis_summary"), dict) else {}
-        asum = after.get("diagnosis_summary") if isinstance(after.get("diagnosis_summary"), dict) else {}
+        bsum = (
+            before.get("diagnosis_summary")
+            if isinstance(before.get("diagnosis_summary"), dict)
+            else {}
+        )
+        asum = (
+            after.get("diagnosis_summary")
+            if isinstance(after.get("diagnosis_summary"), dict)
+            else {}
+        )
         for key in IMMUTABLE_DIAG_SUMMARY:
             path = f"diagnosis_summary.{key}"
             if path in mentioned or key in mentioned:

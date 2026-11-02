@@ -5,6 +5,7 @@ On Python >= 3.9 ``logging.getLogger("root")`` returns the REAL root logger,
 so ``_silence_noisy_libraries`` levelled the whole application down to
 WARNING and every INFO/DEBUG record silently vanished from the log file.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,11 +56,7 @@ def test_quiet_list_never_contains_root_name():
 def test_handlers_carry_the_root_noise_filter(restored_root_logging):
     _force_full_configure()
     handlers = logging.getLogger().handlers
-    file_handlers = [
-        h
-        for h in handlers
-        if isinstance(h, logging.handlers.RotatingFileHandler)
-    ]
+    file_handlers = [h for h in handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
     assert file_handlers, "rotating file handler must be attached to root"
     for handler in file_handlers:
         assert any(

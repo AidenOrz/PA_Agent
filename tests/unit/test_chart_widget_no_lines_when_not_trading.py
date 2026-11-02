@@ -4,6 +4,7 @@ Task 14.7 — pytest-qt test.
 
 Validates: Requirements R9.4, R10.2
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,11 +28,7 @@ def _count_infinite_lines(plot_widget) -> int:
     """Count the number of InfiniteLine items currently in the plot."""
     import pyqtgraph as pg
 
-    return sum(
-        1
-        for item in plot_widget.getPlotItem().items
-        if isinstance(item, pg.InfiniteLine)
-    )
+    return sum(1 for item in plot_widget.getPlotItem().items if isinstance(item, pg.InfiniteLine))
 
 
 class TestNoLinesWhenNotTrading:
@@ -67,9 +64,9 @@ class TestNoLinesWhenNotTrading:
         chart_widget.set_decision(trading_decision)
 
         # Sanity check: lines should exist now
-        assert _count_infinite_lines(chart_widget) > 0, (
-            "Expected InfiniteLine items after a trading decision."
-        )
+        assert (
+            _count_infinite_lines(chart_widget) > 0
+        ), "Expected InfiniteLine items after a trading decision."
 
         # Now switch to 不下单
         no_order_decision = {
@@ -113,13 +110,15 @@ class TestNoLinesWhenNotTrading:
         chart_widget.set_frame(frame)
         qtbot.wait(100)
 
-        chart_widget.set_decision({
-            "order_type": "限价单",
-            "order_direction": "做空",
-            "entry_price": 2000.0,
-            "take_profit_price": 1980.0,
-            "stop_loss_price": 2010.0,
-        })
+        chart_widget.set_decision(
+            {
+                "order_type": "限价单",
+                "order_direction": "做空",
+                "entry_price": 2000.0,
+                "take_profit_price": 1980.0,
+                "stop_loss_price": 2010.0,
+            }
+        )
         qtbot.wait(100)
 
         assert len(chart_widget._direction_items) >= 1
@@ -144,13 +143,15 @@ class TestNoLinesWhenNotTrading:
 
     def test_clear_decision_overlay_keeps_lines_gone(self, chart_widget):
         """clear_decision_overlay() removes trade lines without requiring reset()."""
-        chart_widget.set_decision({
-            "order_type": "限价单",
-            "order_direction": "做多",
-            "entry_price": 1900.0,
-            "take_profit_price": 1920.0,
-            "stop_loss_price": 1880.0,
-        })
+        chart_widget.set_decision(
+            {
+                "order_type": "限价单",
+                "order_direction": "做多",
+                "entry_price": 1900.0,
+                "take_profit_price": 1920.0,
+                "stop_loss_price": 1880.0,
+            }
+        )
         chart_widget.clear_decision_overlay()
         assert _count_infinite_lines(chart_widget) == 0
         assert chart_widget._pending_decision is None

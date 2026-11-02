@@ -12,6 +12,7 @@ Also covered:
   are cached, instead of giving up with a status message;
 - ``_check_auto_incremental`` must never arm auto analysis after a switch.
 """
+
 from __future__ import annotations
 
 import time
@@ -259,9 +260,7 @@ def test_wait_close_with_empty_cache_fetches_then_arms(qtbot):
 
     assert handled is True
     # The background fetch arms the wait once bars arrive (no silent give-up).
-    qtbot.waitUntil(
-        lambda: window._pending_submit_after_close, timeout=10_000
-    )
+    qtbot.waitUntil(lambda: window._pending_submit_after_close, timeout=10_000)
     assert window._pending_submit_symbol == "XAUUSD"
     assert window._pending_submit_timeframe == "1h"
     assert start.call_count == 0  # armed, not started — bar is still forming
@@ -275,9 +274,7 @@ def test_wait_close_with_empty_cache_fetches_then_arms(qtbot):
 def test_check_auto_incremental_only_hints_never_arms(qtbot, monkeypatch):
     import pa_agent.records.analysis_history as history
 
-    monkeypatch.setattr(
-        history, "find_latest_successful_record", lambda **kwargs: object()
-    )
+    monkeypatch.setattr(history, "find_latest_successful_record", lambda **kwargs: object())
 
     window = _make_window(qtbot, WeStockSource())
 

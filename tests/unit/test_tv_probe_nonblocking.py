@@ -7,6 +7,7 @@
 
 本文件全部使用假的探测函数，既不打网络也不做真实等待。
 """
+
 from __future__ import annotations
 
 import threading
@@ -95,6 +96,7 @@ def test_probe_worker_reports_failure_detail(qtbot, monkeypatch) -> None:
 
 def test_probe_worker_swallows_exceptions(qtbot, monkeypatch) -> None:
     """探测代码抛异常也必须变成一次「失败」而不是崩掉线程。"""
+
     def _boom(**kwargs):
         raise RuntimeError("kaboom")
 

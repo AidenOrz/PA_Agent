@@ -65,9 +65,7 @@ def test_pending_filename_uses_minutes_milliseconds_and_safe_components(tmp_path
     )
 
     path = PendingWriter(pending_dir=tmp_path).save_full(record)
-    expected_ts = pending_module._ms_to_local_datetime(timestamp_ms).strftime(
-        "%Y-%m-%d_%H-%M-%S"
-    )
+    expected_ts = pending_module._ms_to_local_datetime(timestamp_ms).strftime("%Y-%m-%d_%H-%M-%S")
 
     assert path.parent.resolve() == tmp_path.resolve()
     assert path.name.startswith(f"{expected_ts}-123_")

@@ -1,4 +1,5 @@
 """Probe whether this machine can reach TradingView via tvdatafeed."""
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -27,9 +28,7 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
         proxy_override = ""
         try:
             settings = load_settings(SETTINGS_JSON_PATH)
-            proxy_override = str(
-                getattr(settings.general, "tradingview_proxy", "") or ""
-            )
+            proxy_override = str(getattr(settings.general, "tradingview_proxy", "") or "")
         except Exception:
             logger.debug("could not load settings for TV proxy override", exc_info=True)
 
@@ -50,14 +49,10 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
         fut.result(timeout=timeout_s)
         return True, None, False
     except concurrent.futures.TimeoutError:
-        logger.warning(
-            "TradingView connectivity probe timed out after %.0fs", timeout_s
-        )
+        logger.warning("TradingView connectivity probe timed out after %.0fs", timeout_s)
         return False, "连接超时", True
     except ImportError as exc:
-        logger.warning(
-            "TradingView connectivity probe: tvDatafeed not installed: %s", exc
-        )
+        logger.warning("TradingView connectivity probe: tvDatafeed not installed: %s", exc)
         return False, str(exc), False
     except Exception as exc:
         logger.warning("TradingView connectivity probe failed: %s", exc)

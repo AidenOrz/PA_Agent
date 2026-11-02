@@ -7,6 +7,7 @@ Covers the two failure modes that made TradingView look broken:
 * a venue that cannot list the symbol (000001 on OANDA/NASDAQ, 1810 off HKEX)
   being requested anyway, burning one WebSocket timeout per attempt.
 """
+
 from __future__ import annotations
 
 import pytest

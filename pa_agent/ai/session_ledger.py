@@ -1,4 +1,5 @@
 """Session-level token usage ledger (no pricing)."""
+
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,5 @@
 """Stage 1 / Stage 2 校验提示文案的共用实现与阶段差异（行为等价回归）。"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace

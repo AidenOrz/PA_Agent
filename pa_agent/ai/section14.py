@@ -34,8 +34,7 @@ _CLAUSE_SPLIT_RE = re.compile(r"[。；;\n]+")
 # Verbs that assert "this decision hits a prohibition".  The negative lookahead
 # skips nominal uses ("触犯判定", "违规行为清单") that are not assertions.
 _VIOLATION_VERB_RE = re.compile(
-    r"(触犯|违反|违规|触发|命中)"
-    r"(?![判定检核扫描清单项情况风险标准行为记录历史类型])"
+    r"(触犯|违反|违规|触发|命中)" r"(?![判定检核扫描清单项情况风险标准行为记录历史类型])"
 )
 
 # Tokens that, when they end the text right before a violation verb, negate it.
@@ -59,7 +58,9 @@ _NEGATION_PREFIXES = (
 
 # Explicit "I looked and found nothing" phrasing, used when the reason contains
 # no violation verb at all.
-_STANDALONE_DENIALS = frozenset({"无", "否", "没有", "未", "均无", "皆无", "不存在", "none", "no", "clean"})
+_STANDALONE_DENIALS = frozenset(
+    {"无", "否", "没有", "未", "均无", "皆无", "不存在", "none", "no", "clean"}
+)
 
 # Explicit "I looked and found nothing" phrasing.
 _ALL_CLEAR_PHRASES = (

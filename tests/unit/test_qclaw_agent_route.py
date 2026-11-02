@@ -1,4 +1,5 @@
 """Tests for QClaw public-gateway Agent routing (no relay on 19004)."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -182,9 +183,11 @@ def test_sync_workbuddy_on_load_keeps_submodel() -> None:
     settings.provider.base_url = "https://copilot.tencent.com/v2"
     settings.provider.api_key = "wb-token"
 
-    with patch("pa_agent.ai.workbuddy_connector.detect_workbuddy", return_value=True), patch(
-        "pa_agent.ai.workbuddy_connector.apply_workbuddy_provider_to_settings"
-    ) as apply, patch("pa_agent.config.settings.save_settings") as save:
+    with (
+        patch("pa_agent.ai.workbuddy_connector.detect_workbuddy", return_value=True),
+        patch("pa_agent.ai.workbuddy_connector.apply_workbuddy_provider_to_settings") as apply,
+        patch("pa_agent.config.settings.save_settings") as save,
+    ):
         apply.return_value = None
         sync_workbuddy_provider_on_load(settings, save_path=Path("settings.json"))
         apply.assert_called_once_with(settings)
@@ -252,9 +255,7 @@ def test_sync_qclaw_on_load_skips_openclaw_wb_with_stale_gateway_base() -> None:
             "pa_agent.ai.qclaw_connector._get_qclaw_gateway_info",
             return_value=("127.0.0.1", 58579, "qclaw-tok"),
         ):
-            with patch(
-                "pa_agent.ai.qclaw_connector.apply_qclaw_provider_to_settings"
-            ) as apply:
+            with patch("pa_agent.ai.qclaw_connector.apply_qclaw_provider_to_settings") as apply:
                 sync_qclaw_agent_provider_on_load(settings)
                 apply.assert_not_called()
 
