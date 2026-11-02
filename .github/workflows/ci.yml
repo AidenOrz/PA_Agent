@@ -23,7 +23,19 @@ jobs:
       # "import pa_agent" only proves the package resolves; run the suite.
       # e2e is excluded (it drives the Qt event loop and is run locally) and
       # live needs a real API key.
+      #
+      # QT_QPA_PLATFORM=minimal: the runner has no interactive desktop
+      # session.  With qwindows (the default there) Qt's backing store for a
+      # QGraphicsView being repainted from pytest-qt's processEvents() ends up
+      # handing paint() an unusable QPainter, and the access violation aborts
+      # the whole process ("Windows fatal exception", exit -1073741819) with
+      # no pytest summary at all.  It is a headless-Qt limitation, not our
+      # code: the identical suite is green locally on qwindows.  "minimal"
+      # still runs the full paint path (raster, no window system), unlike
+      # "offscreen", which reproduced the same crash locally.
       - name: Run tests
+        env:
+          QT_QPA_PLATFORM: minimal
         run: python -m pytest -m "not live" --ignore=tests/e2e -q
 
       # Advisory for now: the repository still carries a lint backlog

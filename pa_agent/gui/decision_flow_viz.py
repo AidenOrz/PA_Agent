@@ -111,6 +111,24 @@ def _draw_corner_brackets(painter: QPainter, rect: QRectF, color: QColor) -> Non
     painter.drawLine(QPointF(x1, y1 - 8 - l), QPointF(x1, y1 - 8))
 
 
+def _scene_anim_phase(item: QGraphicsObject) -> float | None:
+    """Read the owning scene's animation phase, tolerating a torn-down item.
+
+    ``QGraphicsScene.clear()`` deletes the C++ objects while the Python wrappers
+    may still be referenced (the panel caches placed items), so a queued paint
+    can reach an item whose scene is already gone and ``self.scene()`` raises
+    ``RuntimeError: wrapped C/C++ object ... has been deleted``.  Letting that
+    escape a paint() aborts the whole process on Windows ("Fatal Python error:
+    Aborted"), which is why the lookup has to be tolerant.
+    """
+    try:
+        scene = item.scene()
+    except RuntimeError:
+        return None
+    value = getattr(scene, "anim_phase", None)
+    return float(value) if isinstance(value, int | float) else None
+
+
 def _taken_branch_side(item: dict[str, Any]) -> Literal["left", "right", "down"]:
     """Which branch the AI took: left=否, right=是, down=跳过/直线."""
     if item.get("skipped"):
@@ -263,13 +281,16 @@ class _BranchEdge(QGraphicsObject):
         return bool(self._active)
 
     def phase(self, scene_phase: float | None = None) -> float:
-        """相位来源：优先用 scene 的实例相位，独立使用时退回本地相位。"""
+        """相位来源：优先用 scene 的实例相位，独立使用时退回本地相位。
+
+        场景已被销毁（scene.clear() 之后仍有排队中的重绘）时退回本地相位，
+        绝不能把 RuntimeError 抛进 paint()。
+        """
         if scene_phase is not None:
             return float(scene_phase)
-        scene = self.scene()
-        getter = getattr(scene, "anim_phase", None)
-        if isinstance(getter, int | float):
-            return float(getter)
+        scene_value = _scene_anim_phase(self)
+        if scene_value is not None:
+            return scene_value
         return self._phase
 
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
@@ -635,10 +656,8 @@ class _TerminalNode(QGraphicsObject):
         self.setToolTip(f"§{self._nid} · {self._outcome_zh}\n{self._label}")
 
     def _anim_phase(self) -> float:
-        """取所属 scene 的实例相位（各视图互不影响）。"""
-        scene = self.scene()
-        value = getattr(scene, "anim_phase", 0.0) if scene is not None else 0.0
-        return float(value) if isinstance(value, int | float) else 0.0
+        """取所属 scene 的实例相位（各视图互不影响；场景已销毁时返回 0）。"""
+        return _scene_anim_phase(self) or 0.0
 
     def boundingRect(self) -> QRectF:
         return QRectF(-_TERMINAL_W / 2 - 8, -8, _TERMINAL_W + 16, _TERMINAL_H + 16)

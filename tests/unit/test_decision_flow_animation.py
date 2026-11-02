@@ -152,3 +152,29 @@ def test_clear_stops_animation_timer(qtbot) -> None:
     panel.clear()
 
     assert panel._fx_timer.isActive() is False
+def test_paint_survives_scene_cleared_underneath(qtbot) -> None:
+    """场景被清空后仍有排队重绘时，paint() 不得抛 RuntimeError。
+
+    ``QGraphicsScene.clear()`` 销毁 C++ 对象，但 Python 侧可能还持有 item
+    引用（面板缓存了 placed item），QueuedConnection 的 paint 事件可能晚于
+    销毁到达。此时 ``self.scene()`` 会抛
+    ``RuntimeError: wrapped C/C++ object ... has been deleted``；异常从
+    paint() 逃到 Qt 事件循环会直接 abort 整个进程（Windows 上表现为
+    ``Fatal Python error: Aborted``，CI 就是这么挂的）。
+    """
+    panel = viz.DecisionFlowVizPanel()
+    qtbot.addWidget(panel)
+    panel.set_trace(**_TRACE)
+    panel.show()
+
+    edges = [i for i in panel._scene.items() if isinstance(i, viz._BranchEdge)]
+    terminals = [i for i in panel._scene.items() if isinstance(i, viz._TerminalNode)]
+    assert edges and terminals
+
+    panel._scene.clear()  # C++ 侧对象已销毁，Python 包装器仍被下面引用
+
+    # 模拟迟到的重绘：两个取相位的入口都必须安全降级而不是抛异常
+    for edge in edges:
+        assert isinstance(edge.phase(), float)
+    for node in terminals:
+        assert isinstance(node._anim_phase(), float)
