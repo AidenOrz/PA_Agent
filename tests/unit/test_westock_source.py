@@ -39,6 +39,40 @@ def _completed(stdout: str, *, returncode: int = 0, stderr: str = ""):
     )
 
 
+def _patch_popen(monkeypatch: pytest.MonkeyPatch, respond) -> None:
+    """Patch ``subprocess.Popen`` (the CLI path uses Popen to kill whole trees).
+
+    ``respond(command)`` returns a ``CompletedProcess`` or raises
+    ``subprocess.TimeoutExpired`` from inside ``communicate()`` — the timeout
+    must surface there, since ``_run_with_tree_cleanup`` only wraps
+    ``communicate`` in its ``except``.
+    """
+
+    class _FakePopen:
+        def __init__(self, command, **_kwargs):
+            self.args = list(command)
+            self.returncode = 0
+            self.pid = 0
+
+        def communicate(self, timeout=None):
+            proc = respond(self.args)
+            self.returncode = proc.returncode
+            return proc.stdout, proc.stderr
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    monkeypatch.setattr("pa_agent.data.westock_source.subprocess.Popen", _FakePopen)
+    # 超时路径会用 taskkill 收进程树；测试里不能真跑系统命令。
+    monkeypatch.setattr(
+        "pa_agent.data.westock_source.subprocess.run",
+        lambda *_args, **_kwargs: _completed(""),
+    )
+
+
 def test_normalize_symbols_and_timeframes() -> None:
     assert normalize_westock_symbol("600519") == "sh600519"
     assert normalize_westock_symbol("000001") == "sz000001"
@@ -98,12 +132,11 @@ def test_connect_checks_node_runtime_but_does_not_run_npx(
     def fake_which(name: str) -> str | None:
         return f"{name}-mock"
 
-    def fake_run(command, **_kwargs):
-        calls.append(command)
-        return _completed("v24.18.0")
-
     monkeypatch.setattr("pa_agent.data.westock_source.shutil.which", fake_which)
-    monkeypatch.setattr("pa_agent.data.westock_source.subprocess.run", fake_run)
+    _patch_popen(
+        monkeypatch,
+        lambda command: (calls.append(command), _completed("v24.18.0"))[1],
+    )
     source.connect()
 
     assert source._connected is True
@@ -127,11 +160,10 @@ def test_latest_snapshot_parses_wrapped_json_and_orders_newest_first(
     )
     calls: list[list[str]] = []
 
-    def fake_run(command, **_kwargs):
-        calls.append(command)
-        return _completed(payload)
-
-    monkeypatch.setattr("pa_agent.data.westock_source.subprocess.run", fake_run)
+    _patch_popen(
+        monkeypatch,
+        lambda command: (calls.append(command), _completed(payload))[1],
+    )
     bars = source.latest_snapshot(2)
 
     assert [bar.close for bar in bars] == [12.0, 10.5]
@@ -156,10 +188,7 @@ def test_latest_snapshot_skips_rows_without_complete_ohlc(
             {"date": "2026-08-04", "open": 9, "close": 10, "high": 10.5, "low": 8.5},
         ],
     }
-    monkeypatch.setattr(
-        "pa_agent.data.westock_source.subprocess.run",
-        lambda *_args, **_kwargs: _completed(json.dumps(payload)),
-    )
+    _patch_popen(monkeypatch, lambda _command: _completed(json.dumps(payload)))
     bars = source.latest_snapshot(5)
     assert len(bars) == 1
     assert bars[0].close == 10
@@ -169,9 +198,9 @@ def test_cli_failure_and_timeout_are_transient(monkeypatch: pytest.MonkeyPatch) 
     source = _source()
     source.subscribe("sh600519", "1d")
 
-    monkeypatch.setattr(
-        "pa_agent.data.westock_source.subprocess.run",
-        lambda *_args, **_kwargs: _completed(
+    _patch_popen(
+        monkeypatch,
+        lambda _command: _completed(
             '{"success":false,"error":{"message":"rate limited"}}',
             returncode=1,
         ),
@@ -179,10 +208,10 @@ def test_cli_failure_and_timeout_are_transient(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(DataSourceTransientError, match="rate limited"):
         source.latest_snapshot(1)
 
-    def timeout(*_args, **_kwargs):
+    def timeout_response(_command):
         raise subprocess.TimeoutExpired("npx-mock", 30)
 
-    monkeypatch.setattr("pa_agent.data.westock_source.subprocess.run", timeout)
+    _patch_popen(monkeypatch, timeout_response)
     with pytest.raises(DataSourceTransientError, match="超时"):
         source.latest_snapshot(1)
 
@@ -196,12 +225,12 @@ def test_snapshot_cache_avoids_repeated_cli_calls(monkeypatch: pytest.MonkeyPatc
     )
     calls = 0
 
-    def fake_run(*_args, **_kwargs):
+    def respond(_command):
         nonlocal calls
         calls += 1
         return _completed(payload)
 
-    monkeypatch.setattr("pa_agent.data.westock_source.subprocess.run", fake_run)
+    _patch_popen(monkeypatch, respond)
     assert source.latest_snapshot(1)[0].close == 11
     assert source.latest_snapshot(1)[0].close == 11
     assert calls == 1

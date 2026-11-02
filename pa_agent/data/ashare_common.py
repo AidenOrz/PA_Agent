@@ -4,6 +4,7 @@ Used by East Money, Baostock, and optional AkShare paths — not tied to AkShare
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -11,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 from pa_agent.data.base import KlineBar, normalize_kline_bar
 from pa_agent.data.datetime_ts import datetime_to_ts_ms
+
+logger = logging.getLogger(__name__)
 
 _CN_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -133,6 +136,60 @@ def quote_volume_lots_to_shares(lots: float, *, symbol: str = "") -> float:
     return float(lots) * 100.0
 
 
+_REFERENCE_INDEX_CODE = "000300"
+
+
+def reference_index_traded_today(*, now: datetime | None = None) -> bool | None:
+    """参考指数（沪深 300）当日是否已有成交数据 —— 保守的 "今天开市吗" 判据。
+
+    Returns:
+        ``True``  当日指数已有成交量（确定开市）；
+        ``False`` 当日指数快照成交量为 0（确定没开市）；
+        ``None``  拿不到快照（网络失败 / 字段缺失），调用方必须按 "拿不准" 处理。
+
+    东财 ``stock/get`` 的 ``f47`` 是当日累计成交量（手），``f86`` 是行情时间戳。
+    这里只信 "当天"：若时间戳不是今天，说明拿到的是上一个交易日的收盘快照，
+    同样返回 ``False``——宁可少补一根 K 线，也不要在休市日凭空造 bar。
+    """
+    now = now or cn_now()
+    try:
+        from pa_agent.data.eastmoney_client import fetch_stock_quote_payload
+
+        payload = fetch_stock_quote_payload(_REFERENCE_INDEX_CODE)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("reference index snapshot failed: %s", exc)
+        return None
+    if not payload:
+        return None
+    volume = payload.get("f47")
+    try:
+        volume_f = float(volume)
+    except (TypeError, ValueError):
+        return None
+    stamp = payload.get("f86")
+    if stamp is not None:
+        try:
+            quote_dt = datetime.fromtimestamp(int(stamp), tz=_CN_TZ)
+        except (TypeError, ValueError, OSError):
+            quote_dt = None
+        if quote_dt is not None and quote_dt.date() != now.date():
+            return False
+    return volume_f > 0
+
+
+def ashare_market_open_today(now: datetime | None = None) -> bool:
+    """今天确定开市吗（工作日 + 参考指数已有成交）。
+
+    ``ashare_trading_day`` 只判断 "工作日 09:30–15:00"，法定休市（国庆 / 春节
+    等）的工作日照样返回 True。这里再叠一层市场证据，且**拿不准就不算开市**:
+    快照取不到时返回 False，避免兜底路径凭工作日凭空补出一根
+    open=close=昨收、volume=0 的假日线。
+    """
+    if not ashare_trading_day(now):
+        return False
+    return reference_index_traded_today(now=now) is True
+
+
 def ensure_today_forming_daily_bar(
     rows_asc: list[dict[str, Any]],
     *,
@@ -144,14 +201,31 @@ def ensure_today_forming_daily_bar(
     session_volume_lots: float = 0.0,
     session_amount: float = 0.0,
     now: datetime | None = None,
+    market_open_today: bool | None = None,
 ) -> bool:
-    """交易时段若日线仍停在昨收，补一根「当日未收盘」K 线以便刷新现价。"""
+    """交易时段若日线仍停在昨收，补一根「当日未收盘」K 线以便刷新现价。
+
+    ``market_open_today`` 是交易日历守卫（见 :func:`ashare_market_open_today`）：
+    合法休市日（国庆 / 春节等落在工作日的假期）没有行情，若只按
+    "工作日 + 时段" 判断就会补出一根 open=close=昨收、volume=0 的假日线，
+    污染后续 K 线序列与涨跌幅。传入 ``False`` 直接不补；传 ``None`` 时由本
+    函数自行探测（探测拿不准同样不补）。
+    """
     from datetime import time as time_cls
 
     if not rows_asc:
         return False
     now = now or cn_now()
     if not ashare_trading_day(now):
+        return False
+    if market_open_today is None:
+        market_open_today = ashare_market_open_today(now)
+    if not market_open_today:
+        logger.debug(
+            "skip forming daily bar for %s on %s: market calendar says closed",
+            symbol,
+            now.date().isoformat(),
+        )
         return False
     today = now.date()
     if bar_trade_date(int(rows_asc[-1]["ts_open"])) >= today:

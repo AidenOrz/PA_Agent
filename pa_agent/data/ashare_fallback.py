@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import threading
+import time
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,111 @@ def _f(text: Any) -> float:
         return 0.0
 
 
+_VALID_DAILY_ADJUST = ("qfq", "hfq", "none")
+
+
+def normalize_daily_adjust(adjust: str | None) -> str:
+    """把调用方的 ``adjust`` 归一成 ``qfq`` / ``hfq`` / ``none``。
+
+    兜底路径以前完全不读 ``adjust``，永远返回不复权价；主路径默认前复权，
+    两者混用会让涨跌幅、均线、结构位全部错位。空串也按项目默认 ``qfq``，
+    未知值同样降级成 ``qfq`` 并告警（不让脏参数静默变成不复权）。
+    """
+    key = str(adjust or "").strip().lower()
+    if key in _VALID_DAILY_ADJUST:
+        return key
+    if key:
+        logger.warning("未知的复权参数 %r，兜底日线按 qfq 处理", adjust)
+    return "qfq"
+
+
+_ZZSHARE_COOLDOWN_S = 60.0
+_tencent_cooldown_until: float = 0.0
+_sina_cooldown_until: float = 0.0
+
+# 兜底路径统一的最小请求间隔（腾讯 / sina / zzshare 共用）：兜底源同样会
+# 返回 429，此前只有 zzshare 有熔断，腾讯 / sina 是无节流直连。
+_FALLBACK_MIN_INTERVAL_S = 0.2
+_fallback_throttle_lock = threading.Lock()
+_fallback_last_request: dict[str, float] = {}
+
+
+def _zzshare_blocked() -> bool:
+    """zzshare 429 熔断是否仍在生效（所有 zzshare 入口共用）。"""
+    return time.monotonic() < _zzshare_cooldown_until
+
+
+def _source_cooling(source: str) -> bool:
+    """该兜底源是否处于 429 冷却期。"""
+
+    if source == "zzshare":
+        return _zzshare_blocked()
+    if source == "tencent":
+        return time.monotonic() < _tencent_cooldown_until
+    if source == "sina":
+        return time.monotonic() < _sina_cooldown_until
+    return False
+
+
+def _trip_rate_limit(source: str) -> None:
+    """429 熔断：记 60s 冷却（与 zzshare 原有策略一致）。"""
+    global _zzshare_cooldown_until, _tencent_cooldown_until, _sina_cooldown_until
+
+    until = time.monotonic() + _ZZSHARE_COOLDOWN_S
+    if source == "zzshare":
+        _zzshare_cooldown_until = until
+    elif source == "tencent":
+        _tencent_cooldown_until = until
+    elif source == "sina":
+        _sina_cooldown_until = until
+    logger.info("%s rate limited (429), cooling down %ss", source, _ZZSHARE_COOLDOWN_S)
+
+
+def _fallback_throttle(source: str) -> None:
+    """同一兜底源的最小请求间隔（多线程共享，避免突发把免费源打到 429）。"""
+
+    with _fallback_throttle_lock:
+        now = time.monotonic()
+        last = _fallback_last_request.get(source, 0.0)
+        wait = _FALLBACK_MIN_INTERVAL_S - (now - last)
+        if wait > 0:
+            time.sleep(wait)
+            now = time.monotonic()
+        _fallback_last_request[source] = now
+
+
+class _CoolingResponse:
+    """熔断期间的占位响应：不发请求，但调用方仍按 429 处理。"""
+
+    status_code = 429
+    text = ""
+    url = ""
+    headers: ClassVar[dict[str, str]] = {}
+    encoding = "utf-8"
+
+    @staticmethod
+    def json() -> dict:
+        return {}
+
+
+def _get_with_rate_limit(source: str, url: str, **kwargs):
+    """统一限流入口：熔断检查 + 最小间隔 + 429 记冷却。
+
+    兜底路径此前绕过限流（腾讯 / sina 裸调 ``requests.get``），突发请求会
+    直接把免费源打到 429。该源仍在冷却期时返回占位 429 响应、不发请求。
+    """
+    if _source_cooling(source):
+        logger.debug("fallback source %s cooling down, skip request", source)
+        placeholder = _CoolingResponse()
+        placeholder.url = url
+        return placeholder
+    _fallback_throttle(source)
+    resp = _http().get(url, **kwargs)
+    if resp is not None and resp.status_code == 429:
+        _trip_rate_limit(source)
+    return resp
+
+
 # --------------------------------------------------------------------------- #
 # Tencent
 # --------------------------------------------------------------------------- #
@@ -98,8 +205,9 @@ def _tencent_spot_raw(symbol: str) -> list[str] | None:
     if not code:
         return None
     try:
-        requests = _http()
-        resp = requests.get(_TENCENT_RT + code, headers=_UA, timeout=6)
+        resp = _get_with_rate_limit(
+            "tencent", _TENCENT_RT + code, headers=_UA, timeout=6
+        )
         resp.encoding = "gbk"
         if resp.status_code != 200 or "~" not in resp.text:
             return None
@@ -201,13 +309,20 @@ def _tencent_kline_rows(raw: list[Any]) -> list[dict[str, Any]]:
 def tencent_daily(
     symbol: str, *, start_date: str, end_date: str, adjust: str = "qfq"
 ) -> list[dict[str, Any]]:
+    """腾讯日线。``adjust`` -> 请求串里的 ``qfq`` / ``hfq`` / 空（不复权）。
+
+    腾讯把三种口径放在不同 key 下（``qfqday`` / ``hfqday`` / ``day``）。
+    请求了复权却只拿得到 ``day`` 时，这里**明确告警**再退回不复权，而不是
+    默默返回一个和主路径口径不一致的序列。
+    """
     code = _tencent_code(symbol)
     if not code:
         return []
-    fq = {"qfq": "qfq", "hfq": "hfq"}.get(adjust, "")
+    adj = normalize_daily_adjust(adjust)
+    fq = "" if adj == "none" else adj
     try:
-        requests = _http()
-        resp = requests.get(
+        resp = _get_with_rate_limit(
+            "tencent",
             _TENCENT_DAILY,
             params={"param": f"{code},day,,,640,{fq}"},
             headers=_UA,
@@ -216,7 +331,15 @@ def tencent_daily(
         if resp.status_code != 200:
             return []
         node = (resp.json().get("data") or {}).get(code) or {}
-        raw = node.get("qfqday") or node.get("hfqday") or node.get("day") or []
+        raw = node.get(f"{fq}day") if fq else None
+        if not raw:
+            raw = node.get("day") or []
+            if fq and raw:
+                logger.warning(
+                    "腾讯仅返回不复权日线（请求 %s）：%s，价格口径与主路径不一致",
+                    adj,
+                    symbol,
+                )
         rows = _tencent_kline_rows(raw)
     except Exception as exc:
         logger.debug("Tencent daily failed for %s: %s", symbol, exc)
@@ -239,8 +362,8 @@ def tencent_minute(
         return []
     p = f"m{period}"
     try:
-        requests = _http()
-        resp = requests.get(
+        resp = _get_with_rate_limit(
+            "tencent",
             _TENCENT_MINUTE,
             params={"param": f"{code},{p},,320"},
             headers=_UA,
@@ -278,10 +401,7 @@ def _zzshare_api():
     loop, so we replace the retry helper with a single non-blocking GET and
     trip a 60s circuit breaker on any 429.
     """
-    global _zzshare_cooldown_until
-    import time
-
-    if time.monotonic() < _zzshare_cooldown_until:
+    if _zzshare_blocked():
         return None
     try:
         import zzshare
@@ -292,18 +412,10 @@ def _zzshare_api():
         return None
 
     def _fast_request(url, params=None, max_retries=0):
-        global _zzshare_cooldown_until
-        import time as _t
-
-        import requests
-
-        res = requests.get(
-            url, params=params, headers=api.headers, timeout=api.timeout
+        # 统一限流入口：最小间隔 + 429 记冷却（与腾讯 / sina 同一套）。
+        return _get_with_rate_limit(
+            "zzshare", url, params=params, headers=api.headers, timeout=api.timeout
         )
-        if res.status_code == 429:
-            _zzshare_cooldown_until = _t.monotonic() + _ZZSHARE_COOLDOWN_S
-            logger.info("zzshare rate limited, cooling down %ss", _ZZSHARE_COOLDOWN_S)
-        return res
 
     with contextlib.suppress(Exception):
         api._request_with_retry = _fast_request
@@ -380,15 +492,25 @@ def zzshare_order_book(symbol: str):
 def zzshare_daily(
     symbol: str, *, start_date: str, end_date: str, adjust: str = "qfq"
 ) -> list[dict[str, Any]]:
-    import zzshare
+    """zzshare 日线。``adjust`` 透传给上游 ``adj``（qfq / hfq / none）。
 
+    上游 ``daily(adj=...)`` 会映射成 ``candle_mode=1/2/0``；不传 adj 时
+    candle_mode=0 即**不复权**。此前这里完全不看 ``adjust``，兜底路径永远返回
+    不复权价，和主路径的前复权价混在一起时涨跌幅、均线全都会错。
+    """
     code = _zzshare_code(symbol)
     if not code:
         return []
+    # 走统一的 api 实例（_request_with_retry 已换成限流版本）：模块级
+    # zzshare.daily 用的是内部 default api，既不过我们的限流，也不看 429 熔断。
+    api = _zzshare_api()
+    if api is None:
+        return []
     beg = start_date.replace("-", "")[:8] or None
     end = end_date.replace("-", "")[:8] or None
+    adj = normalize_daily_adjust(adjust)
     try:
-        df = zzshare.daily(ts_code=code, start_date=beg, end_date=end)
+        df = api.daily(ts_code=code, start_date=beg, end_date=end, adj=adj)
     except Exception as exc:
         logger.debug("zzshare daily failed for %s: %s", symbol, exc)
         return []
@@ -407,7 +529,10 @@ def zzshare_daily(
                 "close": _f(row.get("close")),
                 "high": _f(row.get("high")),
                 "low": _f(row.get("low")),
-                "volume": _f(row.get("vol")) / 100.0,
+                # 成交量单位统一为「手」：东财 K 线 f5、腾讯 K 线、tushare vol
+                # 都是手。这里原本又除了一次 100，导致 zzshare 兜底出来的量
+                # 比主路径小两个数量级（成交量比、放量判断全被带偏）。
+                "volume": _f(row.get("vol")),
                 "amount": _f(row.get("amount")),
                 "pct_chg": _f(row.get("pct_chg")) if row.get("pct_chg") is not None else None,
             }
@@ -447,7 +572,8 @@ def zzshare_minute(
                 "close": _f(row.get("close")),
                 "high": _f(row.get("high")),
                 "low": _f(row.get("low")),
-                "volume": _f(row.get("vol")) / 100.0,
+                # 同上：与东财 / 腾讯分钟线一致，成交量单位为手。
+                "volume": _f(row.get("vol")),
                 "amount": _f(row.get("amount")),
                 "pct_chg": None,
             }
@@ -470,8 +596,8 @@ def sina_spot_quote(symbol: str) -> dict[str, Any] | None:
     if not code:
         return None
     try:
-        requests = _http()
-        resp = requests.get(
+        resp = _get_with_rate_limit(
+            "sina",
             _SINA_RT + code,
             headers={**_UA, "Referer": "https://finance.sina.com.cn/"},
             timeout=6,

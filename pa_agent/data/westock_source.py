@@ -8,13 +8,16 @@ uses the raw ``kline`` command and turns its structured result into
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import time
 from datetime import datetime
 from typing import Any
@@ -127,6 +130,81 @@ def normalize_westock_symbol(symbol: str) -> str:
         return f"{_infer_ashare_prefix(raw)}{raw}"
 
     return ""
+
+
+def _subprocess_creation_flags() -> int:
+    """Windows: 不弹控制台窗口（GUI 进程每轮询一次就会闪一个黑框）。
+
+    ``CREATE_NO_WINDOW`` 只在 Windows 存在；POSIX 上用 0 表示不加标志。
+    这里按 ``sys.platform`` 判断（而不是 ``os.name``）以便测试直接 monkeypatch。
+    """
+    if sys.platform != "win32":
+        return 0
+    return int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
+
+
+def _run_with_tree_cleanup(
+    command: list[str],
+    *,
+    timeout: float,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess:
+    """跑一个会 fork 子进程的 CLI，并在超时后清理**整棵进程树**。
+
+    ``subprocess.run(timeout=...)`` 只 kill 直接子进程：npx.cmd 派生的 node
+    孙进程会继续跑，端口/CPU 泄漏还会让下一次轮询继续超时。这里用
+    ``Popen`` + 进程组：
+
+    - Windows：``CREATE_NEW_PROCESS_GROUP`` 建组，超时后 ``taskkill /T /F``
+      连带子进程一起收掉（无新依赖，taskkill 是系统自带命令）；
+    - POSIX：``start_new_session=True`` 建会话，超时后 ``os.killpg`` 杀整组。
+    """
+    flags = _subprocess_creation_flags()
+    popen_kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        flags |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
+    else:
+        popen_kwargs["start_new_session"] = True
+    # Popen 没有 capture_output 参数（那是 subprocess.run 的语法糖），
+    # 需显式用 PIPE；否则每次轮询都在这里抛 TypeError。
+    if capture_output:
+        popen_kwargs["stdout"] = subprocess.PIPE
+        popen_kwargs["stderr"] = subprocess.PIPE
+    proc = subprocess.Popen(
+        command,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=flags,
+        **popen_kwargs,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(proc)
+        raise
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """尽力收掉 ``proc`` 及它派生的所有子进程（超时路径专用）。"""
+    pid = proc.pid
+    if sys.platform == "win32":
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(pid)],
+                capture_output=True,
+                timeout=10,
+                creationflags=_subprocess_creation_flags(),
+                check=False,
+            )
+    else:
+        with contextlib.suppress(OSError, ProcessLookupError):
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        proc.kill()
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        proc.wait(timeout=5)
 
 
 def _npx_command() -> str | None:
@@ -478,15 +556,7 @@ class WeStockSource(DataSource):
                 "WeStock 需要 Node.js >= 18 和 npx，请先安装 Node.js"
             )
         try:
-            result = subprocess.run(
-                [node, "--version"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=5,
-                check=False,
-            )
+            result = _run_with_tree_cleanup([node, "--version"], timeout=5)
             version_text = (result.stdout or "").strip().lstrip("v")
             major = int(version_text.split(".", 1)[0])
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
@@ -577,15 +647,7 @@ class WeStockSource(DataSource):
             "PA_AGENT_WESTOCK_TIMEOUT_S", 30.0, minimum=1.0, maximum=300.0
         )
         try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_s,
-                check=False,
-            )
+            result = _run_with_tree_cleanup(command, timeout=timeout_s)
         except subprocess.TimeoutExpired as exc:
             raise DataSourceTransientError(
                 f"WeStock 查询超时（>{timeout_s:g}s）"

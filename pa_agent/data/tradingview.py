@@ -187,6 +187,7 @@ class TradingViewSource(DataSource):
             logger.info("未检测到可用代理，TradingView 将直连（可能超时）")
             return
         proxy_url, host, port, proxy_source = proxy
+        proxy_auth = self._proxy_auth_tuple(proxy_url)
         # Respect NO_PROXY / ProxyOverride for auto-detected proxies only —
         # a manually configured proxy is an explicit user choice and wins.
         if proxy_source != "manual":
@@ -209,12 +210,41 @@ class TradingViewSource(DataSource):
                 class_ = _WebSocketDefault
             options.setdefault("http_proxy_host", host)
             options.setdefault("http_proxy_port", port)
+            if proxy_auth is not None:
+                # 需要认证的代理：websocket-client 收 (user, password) 二元组；
+                # 不传就会在 407 上被拒，表现为连接静默失败。
+                options.setdefault("http_proxy_auth", proxy_auth)
             return original(url, timeout=timeout, class_=class_, **options)
 
         tv_main.create_connection = _patched
         self._orig_create_connection = original
         self._patched_create_connection = _patched
-        logger.info("Patched tvDatafeed WebSocket to use proxy %s (from %s)", proxy_url, self._proxy_source)
+        # 日志里不能出现明文密码：只报 host:port 与是否带认证。
+        logger.info(
+            "Patched tvDatafeed WebSocket to use proxy %s:%s (from %s, auth=%s)",
+            host,
+            port,
+            self._proxy_source,
+            "yes" if proxy_auth is not None else "no",
+        )
+
+    @staticmethod
+    def _proxy_auth_tuple(proxy_url: str) -> tuple[str, str] | None:
+        """从代理 URL 里取 ``(user, password)``；没有认证信息返回 None。
+
+        ``http://user:pass@host:port`` 形式的代理需要把凭据单独交给
+        websocket-client（``http_proxy_auth``），否则请求会静默 407。
+        用户名/密码按 URL 规则先做百分号解码（密码里常有 ``@`` / ``:``）。
+        """
+        try:
+            parsed = urllib.parse.urlparse(proxy_url or "")
+        except ValueError:
+            return None
+        if not parsed.username:
+            return None
+        user = urllib.parse.unquote(parsed.username)
+        password = urllib.parse.unquote(parsed.password or "")
+        return user, password
 
     @staticmethod
     def _detect_proxy(override: str = "") -> tuple[str, str, int, str] | None:
@@ -238,10 +268,13 @@ class TradingViewSource(DataSource):
         for key in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
             raw = os.environ.get(key, "").strip()
             if raw:
-                parsed = urllib.parse.urlparse(raw if "://" in raw else f"http://{raw}")
+                normalized = raw if "://" in raw else f"http://{raw}"
+                parsed = urllib.parse.urlparse(normalized)
                 if parsed.hostname:
                     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-                    return raw, parsed.hostname, port, "env"
+                    # 归一化后返回：``user:pass@host:port`` 缺协议时也要带上 scheme，
+                    # 否则调用方无法从中解析出代理认证信息。
+                    return normalized, parsed.hostname, port, "env"
 
         # 2. Windows system proxy (registry) — GUI-launched apps inherit this
         # even when env vars are absent.
@@ -257,8 +290,9 @@ class TradingViewSource(DataSource):
                     server, _ = winreg.QueryValueEx(key, "ProxyServer")
                     if server:
                         host, port = TradingViewSource._parse_proxy_server(server)
-                        if host and port:
-                            return f"http://{host}:{port}", host, port, "registry"
+                        proxy_url = TradingViewSource._proxy_url_for_server(server)
+                        if host and port and proxy_url:
+                            return proxy_url, host, port, "registry"
         except Exception:  # noqa: BLE001
             pass
 
@@ -299,6 +333,33 @@ class TradingViewSource(DataSource):
             return None
         port = parsed.port or 80
         return parsed.hostname, port
+
+    @staticmethod
+    def _proxy_url_for_server(server: str) -> str:
+        """Windows ``ProxyServer`` 值 -> 带 host:port 的代理 URL（保留认证信息）。
+
+        ``http=user:pass@host:port;https=user:pass@host:port`` 这种形式里，
+        认证信息只写在条目里；重建 URL 时不能丢掉，否则需要认证的代理会 407。
+        """
+        text = (server or "").strip()
+        if not text:
+            return ""
+        entry = ""
+        plain = ""
+        for part in text.split(";"):
+            part = part.strip()
+            if not part:
+                continue
+            if "=" in part:
+                scheme, addr = part.split("=", 1)
+                if scheme.strip().lower() == "https" and addr.strip():
+                    entry = addr.strip()
+            elif not plain:
+                plain = part
+        chosen = entry or plain
+        if not chosen:
+            return ""
+        return chosen if "://" in chosen else f"http://{chosen}"
 
     @staticmethod
     def _tcp_open(host: str, port: int, timeout: float = 0.5) -> bool:

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +58,61 @@ _DEFAULT_HEADERS = {
 
 _THROTTLE_NORMAL_S = 0.45
 _THROTTLE_BULK_S = 0.95
+_CN_TZ = ZoneInfo("Asia/Shanghai")
 _throttle_interval_s = _THROTTLE_NORMAL_S
 _last_fetch_mono: float = 0.0
 _threading = __import__("threading")
 _request_lock = _threading.Lock()
 _host_rr_lock = _threading.Lock()
-_request_slots = _threading.Semaphore(1)
+_throttle_lock = _threading.Lock()
 _host_rr: dict[str, int] = {"kline": 0, "quote": 0}
+
+
+class _RequestSlotPool:
+    """可变容量的并发请求槽位池（对象本身永不替换）。
+
+    ``set_screener_bulk_mode`` 以前直接换掉 ``Semaphore`` 对象：在途线程
+    仍握着旧信号量，新线程从新信号量取号，两边互不可见。这里保留同一个
+    对象、只调整容量——在途请求继续占着自己的槽位，释放后新请求才按新
+    容量放行；容量收紧时新请求自然等待，不会互相踩踏。
+    """
+
+    def __init__(self, capacity: int = 1) -> None:
+        self._cond = _threading.Condition()
+        self._capacity = max(1, int(capacity))
+        self._active = 0
+
+    @property
+    def capacity(self) -> int:
+        with self._cond:
+            return self._capacity
+
+    @property
+    def active(self) -> int:
+        with self._cond:
+            return self._active
+
+    def set_capacity(self, capacity: int) -> None:
+        """调整放行上限；对已在途的请求无影响。"""
+        with self._cond:
+            self._capacity = max(1, int(capacity))
+            self._cond.notify_all()
+
+    @contextmanager
+    def slot(self) -> Iterator[None]:
+        with self._cond:
+            while self._active >= self._capacity:
+                self._cond.wait()
+            self._active += 1
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._active -= 1
+                self._cond.notify()
+
+
+_request_slots = _RequestSlotPool(1)
 
 try:
     from curl_cffi import requests as _http
@@ -137,14 +187,32 @@ class EastMoneyTransientError(EastMoneyError):
     """Retryable network / rate-limit error."""
 
 
+def _market_prefix_for_code(symbol: str) -> str:
+    """A 股 6 位代码 -> 交易所前缀（"1" 沪 / "0" 深 / "0" 北交所）。
+
+    模块内唯一权威：``stock_market_code`` / ``stock_secid`` / clist 的 ``fs``
+    都从这里取前缀，避免两套规则各自漂移（历史 bug：``stock_market_code``
+    只认 6/9 开头，把沪市 ETF 510300 判成深市，和 ``fetch_stock_spot_row``
+    的 5/6/9 规则自相矛盾）。
+
+    - 60/68/9 开头 → 上交所；5 开头（沪市 ETF/基金，含 510300）同样是上交所；
+    - 00/30/2 开头、15/16/18 开头（深市 ETF/基金）→ 深交所；
+    - 4/8 开头（北交所）在东财 secid 里同样用 0 前缀（北交所归 market 0）。
+    """
+    code = (symbol or "").strip()[-6:]
+    if code[:1] in ("5", "6", "9"):
+        return "1"
+    return "0"
+
+
 def stock_market_code(symbol: str) -> int:
-    """1 = Shanghai (6/9), 0 = Shenzhen."""
-    return 1 if symbol[:1] in ("6", "9") else 0
+    """1 = 上交所（60/68/9 与沪市 ETF 5xx），0 = 深交所 / 北交所。"""
+    return int(_market_prefix_for_code(symbol))
 
 
 def stock_secid(symbol: str) -> str:
     code = symbol[-6:] if len(symbol) > 6 else symbol
-    return f"{stock_market_code(code)}.{code}"
+    return f"{_market_prefix_for_code(code)}.{code}"
 
 
 def index_secid(symbol: str) -> str:
@@ -159,19 +227,26 @@ def index_secid(symbol: str) -> str:
 
 
 def set_screener_bulk_mode(enabled: bool) -> None:
-    """Slower throttle + limited HTTP concurrency for bulk screening."""
-    global _throttle_interval_s, _request_slots
+    """Slower throttle + limited HTTP concurrency for bulk screening.
+
+    槽位池对象本身不变，只调整容量：在途线程手里的槽位继续有效，不会被
+    "换锁" 撇在旧信号量上（旧实现直接替换 Semaphore 对象，在途请求释放的
+    是无人等待的旧锁，新请求又在另一个锁上排队）。
+    """
+    global _throttle_interval_s
     _throttle_interval_s = _THROTTLE_BULK_S if enabled else _THROTTLE_NORMAL_S
-    _request_slots = _threading.Semaphore(2 if enabled else 1)
+    _request_slots.set_capacity(2 if enabled else 1)
 
 
 def _throttle(*, backoff_s: float = 0.0) -> None:
+    """全局最小请求间隔（多线程共享一个时间戳，`_throttle_lock` 串行更新）。"""
     global _last_fetch_mono
-    now = time.monotonic()
-    wait = max(_throttle_interval_s, backoff_s) - (now - _last_fetch_mono)
-    if wait > 0:
-        time.sleep(wait)
-    _last_fetch_mono = time.monotonic()
+    with _throttle_lock:
+        now = time.monotonic()
+        wait = max(_throttle_interval_s, backoff_s) - (now - _last_fetch_mono)
+        if wait > 0:
+            time.sleep(wait)
+        _last_fetch_mono = time.monotonic()
 
 
 def _http_get_once(
@@ -220,14 +295,17 @@ def _http_get(
         if attempt > 0:
             _throttle(backoff_s=0.35 * attempt)
         try:
-            return _http_get_once(
-                url,
-                params,
-                timeout=timeout,
-                impersonate=impersonate,
-                referer=referer,
-                host_header=host_header,
-            )
+            # 槽位只在这一次真实网络请求期间占用：换 impersonate 重试、
+            # 换主机、轮次退避都不持锁，多线程因此可以并行抓取。
+            with _request_slots.slot():
+                return _http_get_once(
+                    url,
+                    params,
+                    timeout=timeout,
+                    impersonate=impersonate,
+                    referer=referer,
+                    host_header=host_header,
+                )
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             if not _is_transient_http_error(exc):
@@ -259,7 +337,11 @@ def _get_json_on_hosts(
     max_hosts: int | None = None,
     host_header: str | None = None,
 ) -> dict[str, Any]:
-    """Try CDN hosts with retries; serialised to avoid parallel connection drops.
+    """Try CDN hosts with retries.
+
+    并发槽位只在**单次主机请求**前后占用（见 ``_http_get``），不再把整段
+    多主机/多轮重试包在锁里——否则重试等待期间锁被空转持住，多线程抓取
+    被强行串行化。跨主机的节流由 ``_throttle`` 的全局时间戳共同承担。
 
     Use ``max_rounds=1`` and ``max_hosts=3`` for startup / UI paths so a dead
     network cannot block the main thread for minutes.
@@ -271,35 +353,34 @@ def _get_json_on_hosts(
     )
     if max_hosts is not None:
         ordered = ordered[: max(1, int(max_hosts))]
-    with _request_slots:
-        for round_idx in range(max_rounds):
-            for host_idx, host in enumerate(ordered):
-                url = f"https://{host}{path}"
-                effective_host_header = host_header
-                if effective_host_header is None and host_kind == "kline":
-                    effective_host_header = _kline_host_header(host)
-                try:
-                    if host_idx or round_idx:
-                        _throttle(backoff_s=0.4 * round_idx + 0.15 * host_idx)
-                    return _http_get(
-                        url,
-                        params,
-                        timeout=timeout,
-                        referer=referer,
-                        host_header=effective_host_header,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    last_exc = exc
-                    if not _is_transient_http_error(exc):
-                        raise EastMoneyTransientError(str(exc)) from exc
-                    logger.debug(
-                        "East Money host %s round=%d failed: %s",
-                        host,
-                        round_idx,
-                        exc,
-                    )
-            if round_idx + 1 < max_rounds:
-                time.sleep(min(4.0, 0.8 * (2**round_idx)))
+    for round_idx in range(max_rounds):
+        for host_idx, host in enumerate(ordered):
+            url = f"https://{host}{path}"
+            effective_host_header = host_header
+            if effective_host_header is None and host_kind == "kline":
+                effective_host_header = _kline_host_header(host)
+            try:
+                if host_idx or round_idx:
+                    _throttle(backoff_s=0.4 * round_idx + 0.15 * host_idx)
+                return _http_get(
+                    url,
+                    params,
+                    timeout=timeout,
+                    referer=referer,
+                    host_header=effective_host_header,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if not _is_transient_http_error(exc):
+                    raise EastMoneyTransientError(str(exc)) from exc
+                logger.debug(
+                    "East Money host %s round=%d failed: %s",
+                    host,
+                    round_idx,
+                    exc,
+                )
+        if round_idx + 1 < max_rounds:
+            time.sleep(min(4.0, 0.8 * (2**round_idx)))
     msg = str(last_exc or "all hosts failed")
     if _is_transient_http_error(last_exc or Exception(msg)):
         raise EastMoneyTransientError(
@@ -747,31 +828,37 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _spot_row_secid(code: str) -> str:
+    """单只证券的行情的 secid：与 ``stock_secid`` / ``index_secid`` 同一套前缀。"""
+    from pa_agent.data.ashare_common import is_index_symbol
+
+    if is_index_symbol(code):
+        return index_secid(code)
+    return f"{_market_prefix_for_code(code)}.{code}"
+
+
+
 def fetch_stock_spot_row(symbol: str) -> dict[str, Any] | None:
-    """Single-stock spot row from clist (price, 换手, 量比, 市值)."""
+    """Single-stock spot row (price, 换手, 量比, 市值).
+
+    走 ``ulist.np``（按 secid 精确取一只）：clist 的 ``s:<code>`` 并不是代码
+    过滤条件（实测会返回全市场排序结果），此前用它取单只行情会拿到别的票。
+    """
     code = symbol[-6:] if len(symbol) > 6 else symbol.strip()
     if not (code.isdigit() and len(code) == 6):
         return None
-    market = 1 if code.startswith(("5", "6", "9")) else 0
-    fs = f"m:{market}+t:2+s:{code}" if market == 1 else f"m:0+t:6+s:{code}"
     params = {
-        "pn": "1",
-        "pz": "1",
-        "po": "1",
-        "np": "1",
-        "dect": "1",
-        "ut": _UT,
-        "wbp2u": _WBP2U,
         "fltt": "2",
         "invt": "2",
-        "fid": "f12",
-        "fs": fs,
+        "ut": _UT,
+        "wbp2u": _WBP2U,
+        "secids": _spot_row_secid(code),
         "fields": _CLIST_FIELDS_UNIVERSE,
     }
     try:
         data = _get_json_on_hosts(
             _QUOTE_HOSTS,
-            "/api/qt/clist/get",
+            "/api/qt/ulist.np/get",
             params,
             timeout=8.0,
             host_kind="quote",
