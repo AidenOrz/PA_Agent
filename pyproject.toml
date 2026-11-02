@@ -20,8 +20,18 @@ dependencies = [
     "jsonschema>=4.22",
     "pydantic>=2.7",
     "MetaTrader5>=5.0; sys_platform == 'win32'",
-    "tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git",
+    # Pinned to the commit uv.lock already resolved: an unpinned git URL means
+    # every fresh install silently picks up whatever HEAD is, and tvdatafeed's
+    # main branch is the only thing standing between us and a broken WebSocket
+    # client. Bump deliberately (and update uv.lock) when upstream matters.
+    "tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git@e6f6aaa7de439ac6e454d9b26d2760ded8dc4923",
     "cryptography>=42",
+    # trade_logger._render_chart draws the trade screenshot with matplotlib
+    # (Agg backend) and the notifiers / A-share fallbacks use requests; both
+    # were imported at runtime but never declared, so a clean install only
+    # worked by accident (some other dependency pulled them in).
+    "matplotlib>=3.7",
+    "requests>=2.31",
     "akshare>=1.14",
     "baostock>=0.8",
     "curl_cffi>=0.13",
@@ -68,7 +78,9 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 testpaths = ["tests"]
 # 120 s per test: the e2e smoke tests drive the Qt event loop, and a regression
 # there must fail the run instead of hanging it.
-addopts = "-q --timeout=120"
+# --strict-markers: a typo'd marker (e.g. @pytest.mark.smoke) used to be a
+# silent no-op instead of a collection error.
+addopts = "-q --timeout=120 --strict-markers"
 # The app is PyQt6-only (see dependencies + all imports). Without this,
 # pytest-qt auto-detects and may pick PySide6 when both bindings are installed,
 # making isinstance(widget, QWidget) fail inside qtbot.addWidget.
