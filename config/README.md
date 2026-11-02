@@ -26,7 +26,7 @@
 
 ## `settings.json` 字段说明
 
-配置分为四个顶层组：`provider`、`general`、`prompt`、`validation`。
+配置分为七个顶层组：`provider`、`general`、`prompt`、`validation`、`feishu`、`pushplus`、`tushare`。每组的下表列出该组的字段、类型、默认值与说明；模板文件 `config/settings.example.json` 中的默认值与代码完全一致（由测试 `tests/unit/test_settings_example_in_sync.py` 守护）。
 
 ### provider — AI 提供商
 
@@ -46,12 +46,17 @@
 |------|------|--------|------|
 | `general.last_data_source` | string | `"mt5"` | K 线数据来源：`mt5` / `tradingview`（GUI 下拉选项）；`akshare` / `yfinance`（仅代码支持） |
 | `general.last_tradingview_exchange` | string | `""` | TradingView 交易所。空字符串 =（自动）依次探测预设列表。如 `OANDA`、`SSE`、`HKEX` 等 |
+| `general.tradingview_proxy` | string | `""` | TradingView WebSocket 代理地址（如 `http://127.0.0.1:7890`）。空字符串 = 自动探测（环境变量 → 系统代理 → 常见本地端口） |
+| `general.kline_adjust` | string | `"qfq"` | 东财/宝硕等 A 股数据源的复权方式：`qfq`（前复权）/ `hfq`（后复权）/ `none` |
 | `general.last_symbol` | string | `"XAUUSDm"` | 默认品种。MT5 需含后缀（如 `m`），TradingView 用标准名（如 `XAUUSD`） |
 | `general.last_timeframe` | string | `"15m"` | 默认周期，如 `1m`、`5m`、`15m`、`1h`、`4h`、`1d` |
 | `general.analysis_bar_count` | int | `100` | 提交分析时使用的 K 线数量（2–5000） |
 | `general.refresh_interval_ms` | int | `1000` | 图表自动刷新间隔（毫秒） |
 | `general.context_warning_threshold_pct` | float | `80.0` | 上下文占用警告阈值（百分比） |
 | `general.decision_stance` | string | `"balanced"` | 阶段二交易倾向：`conservative` / `balanced` / `aggressive` / `extreme_aggressive` |
+| `general.decision_confidence_threshold` | int | `40` | 下单机会的置信度门槛（0–100）：仅当 `trade_confidence` ≥ 此值时才视为有下单机会（弹窗、告警） |
+| `general.enable_next_bar_prediction` | bool | `false` | 是否请求模型给出「下一根 K 线预期」；关闭时省 token |
+| `general.structure_flip_cooldown_bars` | int | `3` | 同一结构位 entry 相差 ≤3 跳时，禁止反向新方案的冷却 K 线根数（已收盘，1–50） |
 | `general.incremental_max_new_bars` | int | `10` | 增量分析触发阈值：新增已收盘 K 线 ≤ 此值时自动走增量模式（0–500） |
 | `general.auto_resume_chart_after_analysis` | bool | `false` | 分析结束后是否自动恢复「图表实时更新」 |
 | `general.keep_analysis` | bool | `false` | 持续跟踪分析：新 K 线收盘时自动触发新一轮分析 |
@@ -86,6 +91,32 @@
 | `validation.retry_max` | int | `3` | 格式错误（category a）最大重试次数（0–5） |
 | `validation.retry_max_semantic` | int | `1` | 语义错误（category c）最大重试次数（0–3） |
 | `validation.retry_stage2` | bool | `true` | 阶段二校验失败时是否重试 |
+
+### feishu — 飞书机器人推送
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `feishu.enabled` | bool | `true` | 是否启用飞书推送 |
+| `feishu.webhook_url` | string | `""` | 自定义机器人 Webhook 地址；留空 = 不推送 |
+| `feishu.secret` | string | `""` | 自定义机器人签名密钥（开启「加签」时填写） |
+| `feishu.app_id` | string | `""` | 应用机器人 App ID（走应用消息时填写） |
+| `feishu.app_secret` | string | `""` | 应用机器人 App Secret |
+| `feishu.notify_on_order_only` | bool | `true` | 仅在阶段二给出下单机会时推送；`false` 则每轮分析都推送 |
+
+以上字段中的 `webhook_url`、`secret`、`app_secret` 已被日志脱敏层登记，写日志/崩溃报告时会被替换为 `***`。
+
+### pushplus — PushPlus 微信推送
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `pushplus.enabled` | bool | `false` | 是否启用 PushPlus 推送（仅配置文件，无 GUI 入口） |
+| `pushplus.token` | string | `""` | PushPlus 用户 token；已登记脱敏 |
+
+### tushare — Tushare Pro 数据源
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `tushare.token` | string | `""` | Tushare Pro token。**注意：与 `provider.api_key` 不同，此字段以明文保存在 `config/settings.json`**（该文件已被 `.gitignore` 忽略），请勿提交或分享该文件；已登记脱敏 |
 
 ## 安全提醒
 

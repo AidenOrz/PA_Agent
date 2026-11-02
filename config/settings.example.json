@@ -1,30 +1,37 @@
 {
   "provider": {
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-flash",
     "base_url": "https://api.deepseek.com",
+    "api_key": "",
     "api_key_encrypted": "",
     "thinking": true,
     "reasoning_effort": "high",
-    "context_window": 128000
+    "context_window": 2000000
   },
   "general": {
     "analysis_bar_count": 100,
     "refresh_interval_ms": 1000,
     "context_warning_threshold_pct": 80.0,
     "last_data_source": "mt5",
-    "last_tradingview_exchange": "OANDA",
+    "kline_adjust": "qfq",
+    "last_tradingview_exchange": "",
+    "tradingview_proxy": "",
     "last_symbol": "XAUUSDm",
     "last_timeframe": "15m",
     "decision_flow_auto_play": true,
     "decision_flow_play_seconds": 50,
+    "alert_on_order_opportunity": true,
     "incremental_max_new_bars": 10,
     "decision_stance": "balanced",
-    "structure_flip_cooldown_bars": 3,
     "decision_flow_default_zoom_pct": 600,
     "stream_pane_font_pt": 11,
     "chart_seq_label_font_pt": 11,
-    "auto_resume_chart_after_analysis": true,
-    "enable_next_bar_prediction": false
+    "auto_resume_chart_after_analysis": false,
+    "keep_analysis": false,
+    "cancel_keep_analysis_on_retry": false,
+    "decision_confidence_threshold": 40,
+    "enable_next_bar_prediction": false,
+    "structure_flip_cooldown_bars": 3
   },
   "prompt": {
     "stage2_load_full_strategy_library": false,
@@ -33,10 +40,16 @@
     "stage1_inject_pattern_briefs": true
   },
   "validation": {
-    "normalization_mode": "strict",
-    "trace_semantic_checks": true,
-    "strict_bar_by_bar_features": true,
-    "disable_truncation_repair": true
+    "normalization_mode": "lenient",
+    "stage1_coherence_checks": false,
+    "stage2_coherence_checks": false,
+    "trace_semantic_checks": false,
+    "strict_bar_by_bar_features": false,
+    "disable_truncation_repair": false,
+    "retry_enabled": true,
+    "retry_max": 3,
+    "retry_max_semantic": 1,
+    "retry_stage2": true
   },
   "feishu": {
     "enabled": true,
