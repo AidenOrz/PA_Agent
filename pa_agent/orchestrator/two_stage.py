@@ -518,12 +518,13 @@ class TwoStageOrchestrator:
         # ── Step 3: Stage 1 started ───────────────────────────────────────────
         on_event(OrchestratorEvent.Stage1Started)
 
-        # Resolve analysis mode from settings (default: original)
+        # analysis_mode 曾从 settings.general 里读，但 GeneralSettings 从来没有这个
+        # 字段：pydantic 的 extra="ignore" 让赋值直接抛 ValueError，getattr 又永远
+        # 只拿到默认值 —— 于是「原始 / 优化」两种分析过程实际从未被区分过，
+        # 界面上选什么都一样。目前 PromptAssembler 对两种模式产出的提示词完全
+        # 相同（见 _stage1_output_reminder_for_mode），所以这里不再假装读取设置；
+        # 真要支持模式切换，必须同时补 settings 字段 + 两套提示词 + 测试。
         analysis_mode = "original"
-        if self._settings is not None:
-            analysis_mode = str(
-                getattr(self._settings.general, "analysis_mode", "original") or "original"
-            )
 
         # ── Step 4: Build Stage 1 messages ───────────────────────────────────
         if previous_record is not None and incremental_new_bar_count is not None:

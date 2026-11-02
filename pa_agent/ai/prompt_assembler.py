@@ -639,11 +639,19 @@ estimated_win_rate_reasoning：必须简要说明依据（如“宽通道顺势 
 
 
 def _stage1_output_reminder_for_mode(analysis_mode: str = "original") -> str:
-    """Return Stage 1 output rules (same for original and optimized).
+    """Return Stage 1 output rules — identical for every analysis mode.
 
     Program prefill handles §1.1/§2.3/§2.4; AI outputs the five gate nodes only.
+
+    ``analysis_mode`` is accepted for call-site compatibility but has no effect:
+    the "original" and "optimized" processes were never actually differentiated
+    here, and the GUI selector that used to switch between them wrote a settings
+    field (``GeneralSettings.analysis_mode``) that does not exist.  Keeping the
+    parameter documented as an explicit no-op is deliberate — do not add a
+    mode-specific branch without also adding the setting, the other prompt
+    variant, and tests.
     """
-    _ = analysis_mode  # reserved for future mode-specific tweaks
+    del analysis_mode
     return _STAGE1_OUTPUT_REMINDER
 
 
