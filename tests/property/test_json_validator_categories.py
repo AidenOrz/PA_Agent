@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import json
-import pytest
+
 from pa_agent.ai.json_validator import JsonValidator, Ok, ValidationError
 from pa_agent.config.settings import ValidationSettings
 from tests.fixtures.gate_trace import make_bar_by_bar_summary, make_mandatory_gate_trace_proceed
-
 from tests.fixtures.validators import schema_test_validator, strict_test_validator
 
 validator = strict_test_validator()

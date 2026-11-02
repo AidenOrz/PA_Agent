@@ -20,7 +20,6 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from pa_agent.records.schema import ExperienceEntry
 
@@ -33,7 +32,7 @@ def _default_logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-def _parse_timestamp_ms(filename: str) -> Optional[int]:
+def _parse_timestamp_ms(filename: str) -> int | None:
     """Extract and parse the timestamp from a filename.
 
     Returns the timestamp in milliseconds, or ``None`` if the filename
@@ -65,8 +64,8 @@ class ExperienceReader:
 
     def __init__(
         self,
-        experience_dir: Optional[Path] = None,
-        logger: Optional[logging.Logger] = None,
+        experience_dir: Path | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         if experience_dir is None:
             from pa_agent.config.paths import EXPERIENCE_DIR
@@ -187,7 +186,7 @@ class ExperienceReader:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _read_json(self, path: Path) -> Optional[dict]:
+    def _read_json(self, path: Path) -> dict | None:
         """Read and parse a JSON file.
 
         Returns the parsed dict, or ``None`` on any error (with a warning

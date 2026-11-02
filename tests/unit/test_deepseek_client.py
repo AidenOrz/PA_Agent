@@ -1,20 +1,20 @@
 """Unit tests for DeepSeekClient (task 6.5)."""
 from __future__ import annotations
 
-import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, call
-from pa_agent.config.settings import AIProviderSettings
+
 from pa_agent.ai.deepseek_client import (
-    DeepSeekClient,
     AIReply,
-    AIUsage,
     CancelledError,
+    DeepSeekClient,
     _completion_max_tokens,
     _is_deepseek_model,
-    _openclaw_agent_request_extra,
     _is_stream_options_unsupported_error,
+    _openclaw_agent_request_extra,
 )
+from pa_agent.config.settings import AIProviderSettings
 
 
 def _make_settings(api_key: str = "sk-test-1234abcd") -> AIProviderSettings:

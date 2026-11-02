@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from pa_agent.ai.coherence_checks import (
     validate_bar_by_bar_vs_features,
     validate_incremental_stage1_coherence,
@@ -12,9 +10,9 @@ from pa_agent.ai.coherence_checks import (
     validate_stage2_coherence,
 )
 from pa_agent.ai.json_validator import Ok
-from tests.fixtures.validators import schema_test_validator
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 from tests.fixtures.gate_trace import make_bar_by_bar_summary, make_mandatory_gate_trace_proceed
+from tests.fixtures.validators import schema_test_validator
 
 
 def _frame(n: int = 5) -> KlineFrame:

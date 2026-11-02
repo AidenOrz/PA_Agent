@@ -7,15 +7,12 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-import pytest
 import pyqtgraph as pg
+import pytest
 
 from tests.e2e.smoke_support import SmokeDataSource, make_smoke_ctx
-from tests.fixtures.kline_bars import make_newest_first_bars
-from tests.fixtures.validators import schema_test_validator
-from pa_agent.ai.router import route_strategy_files
-
 from tests.fixtures.ai_payloads import VALID_STAGE1, VALID_STAGE2_NO_ORDER
+from tests.fixtures.kline_bars import make_newest_first_bars
 
 
 def _make_reply(content_dict: dict) -> MagicMock:

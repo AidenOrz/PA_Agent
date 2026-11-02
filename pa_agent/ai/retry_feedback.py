@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pa_agent.ai.retry_policy import StageName, extract_feedback_targets
 from pa_agent.ai.validation_messages import format_validation_errors
 
 StageLit = Literal["stage1", "stage2"]
@@ -49,7 +48,7 @@ def _geometry_excerpt(frame: Any, limit: int = 8) -> str:
         for f in feats:
             lines.append(f"  K{f.seq}: {f.bar_type}")
         return "\n".join(lines)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
 
 

@@ -1,7 +1,6 @@
 """Prompt assembler for Stage 1 (diagnosis) and Stage 2 (decision)."""
 from __future__ import annotations
 
-import datetime
 import functools
 import json
 import logging
@@ -10,15 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from pa_agent.ai.decision_stance import build_decision_stance_guidance, normalize_stance
-from pa_agent.ai.pattern_routing import (
-    STAGE1_DETECTED_PATTERNS_GUIDE,
-    STAGE1_PATTERN_BRIEFS_BLOCK,
-)
 from pa_agent.ai.kline_features import bar_candle_direction_label, compute_kline_geometry_features
 from pa_agent.ai.market_features import (
     compute_simple_market_features,
     inject_market_features_section,
     render_simple_market_features,
+)
+from pa_agent.ai.pattern_routing import (
+    STAGE1_DETECTED_PATTERNS_GUIDE,
+    STAGE1_PATTERN_BRIEFS_BLOCK,
 )
 from pa_agent.data.base import KlineFrame
 from pa_agent.data.datetime_ts import format_epoch_for_display
@@ -1016,7 +1015,7 @@ class PromptAssembler:
                 f"{feat.ema_relation:<7} | "
                 f"{_fmt_feature(feat.overlap_prev_ratio):<10} | "
                 f"{feat.inside_sequence:<6} | "
-                f"{str(feat.ioi_pattern):<3} | "
+                f"{feat.ioi_pattern!s:<3} | "
                 f"{feat.micro_double:<4} | "
                 f"{feat.gap_bar:<5} | "
                 f"{feat.ema_gap_count:<9} | "
@@ -1032,7 +1031,7 @@ class PromptAssembler:
         try:
             features = compute_simple_market_features(frame)
             return render_simple_market_features(features)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("_render_simple_market_features_block failed: %s", exc)
             return ""
 
@@ -1205,9 +1204,9 @@ class PromptAssembler:
         """
         try:
             from pa_agent.ai.decision_nodes import (
+                judge_always_in,
                 judge_data_sufficiency,
                 judge_direction,
-                judge_always_in,
             )
             from pa_agent.ai.trend_context import (
                 build_trend_context,
@@ -1269,7 +1268,7 @@ class PromptAssembler:
                 "  • override_reason 必须具体，不接受「整体看跌」「感觉已变」等模糊描述。"
             )
             return "\n".join(hint_lines)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("_render_program_prefill_hint failed: %s", exc)
             return ""
 

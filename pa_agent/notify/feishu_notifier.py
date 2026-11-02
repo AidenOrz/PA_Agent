@@ -28,10 +28,10 @@ import base64
 import hashlib
 import hmac
 import logging
-import time
 import threading
+import time
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pa_agent.config.settings import Settings
@@ -89,7 +89,7 @@ _token_cache = _TokenCache()
 
 
 # ── 配置加载 ──────────────────────────────────────────────────────────────────
-def _feishu_config_dict(settings: "Settings | None" = None) -> dict[str, Any]:
+def _feishu_config_dict(settings: Settings | None = None) -> dict[str, Any]:
     """Load Feishu settings from settings.json (or an in-memory Settings object)."""
     if settings is not None:
         return settings.feishu.model_dump()
@@ -297,7 +297,7 @@ def send_order_signal(
     symbol: str,
     timeframe: str,
     chart_image_path: str | Path | None = None,
-    settings: "Settings | None" = None,
+    settings: Settings | None = None,
 ) -> bool:
     """发送下单信号到飞书群.
 

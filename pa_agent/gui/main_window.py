@@ -5,7 +5,7 @@ import contextlib
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal, pyqtSlot, QObject
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QCloseEvent, QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -19,13 +19,11 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QSpinBox,
     QSplitter,
     QStatusBar,
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt
 
 from pa_agent.app_context import AppContext
 from pa_agent.gui.validation_debug_dialog import show_validation_debug_dialog
@@ -324,8 +322,7 @@ class _AnalysisWorker(QThread):
                 incremental_new_bar_count=self._incremental_new_bar_count,
             )
             decision = record.stage2_decision or {}
-        except Exception as exc:  # noqa: BLE001
-            from pa_agent.ai.deepseek_client import CancelledError as _CancelledError
+        except Exception as exc:
 
             decision = {}
             record = None  # type: ignore[assignment]
@@ -439,7 +436,7 @@ class MainWindow(QMainWindow):
                 self._on_demo_flow_playback_finished,
                 Qt.ConnectionType.UniqueConnection,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
         self._central = self._build_workbench()
@@ -580,8 +577,8 @@ class MainWindow(QMainWindow):
         # Restore saved exchange from settings, default to auto.
         saved_ex = ""
         try:
-            from pa_agent.config.settings import load_settings
             from pa_agent.config.paths import SETTINGS_JSON_PATH
+            from pa_agent.config.settings import load_settings
             _s = load_settings(SETTINGS_JSON_PATH)
             saved_ex = getattr(_s.general, 'last_tradingview_exchange', '') or ''
         except Exception:
@@ -684,7 +681,7 @@ class MainWindow(QMainWindow):
         if _settings is not None:
             try:
                 _settings.general.keep_analysis = False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         self._resume_chart_btn = QPushButton("图表实时更新")
@@ -891,7 +888,7 @@ class MainWindow(QMainWindow):
             if callable(close_ws):
                 try:
                     close_ws()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
         if loop.isRunning():
             loop.wait(_WORKER_JOIN_TIMEOUT_MS)
@@ -1192,11 +1189,11 @@ class MainWindow(QMainWindow):
             return
         try:
             data_source.unsubscribe()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("unsubscribe failed: %s", exc)
         try:
             data_source.disconnect()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("disconnect failed: %s", exc)
 
     def _current_data_source_kind(self) -> str:
@@ -1295,7 +1292,7 @@ class MainWindow(QMainWindow):
         
         Called from worker thread; use invokeMethod to update GUI on main thread.
         """
-        from PyQt6.QtCore import Qt, QMetaObject, Q_ARG
+        from PyQt6.QtCore import Q_ARG, QMetaObject, Qt
         timeframe = self._tf_combo.currentText() if hasattr(self, "_tf_combo") else ""
         msg = f"TV 自动探测 {label} {timeframe}…"
         # Update status bar on main thread to avoid race with other updates
@@ -1326,7 +1323,7 @@ class MainWindow(QMainWindow):
             from pa_agent.config.settings import save_settings
 
             save_settings(settings)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Failed to persist TV exchange: %s", exc)
 
     def _on_tv_exchange_changed(self, _index: int = 0) -> None:
@@ -1359,7 +1356,7 @@ class MainWindow(QMainWindow):
                 self._status_bar.showMessage(
                     f"TradingView 正在拉取 {ex_show}:{sym_raw} {timeframe}…"
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("TV resubscribe after exchange change: %s", exc)
                 self._status_bar.showMessage(f"订阅失败：{exc}")
             else:
@@ -1394,7 +1391,7 @@ class MainWindow(QMainWindow):
         if data_source is not None and self._data_source_connected(data_source):
             try:
                 symbols = list(data_source.list_symbols())
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug("list_symbols failed: %s", exc)
 
         self._symbol_combo.blockSignals(True)
@@ -1423,7 +1420,7 @@ class MainWindow(QMainWindow):
         if data_source is not None:
             try:
                 supported = list(data_source.supported_timeframes())
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug("supported_timeframes failed: %s", exc)
         items = [tf for tf in preferred if tf in supported]
         if not items and supported:
@@ -1472,7 +1469,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self._switch_data_source(kind)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Data source switch failed: %s", exc)
             from PyQt6.QtWidgets import QMessageBox
 
@@ -1562,7 +1559,7 @@ class MainWindow(QMainWindow):
                 settings.general.last_timeframe = self._tf_combo.currentText()
                 try:
                     save_settings(settings)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug("Failed to persist data source: %s", exc)
 
             label = data_source_label(kind)
@@ -1900,7 +1897,7 @@ class MainWindow(QMainWindow):
             if include_forming is None:
                 include_forming = self._chart_wants_forming_bar()
             return self._build_chart_frame_from_bars(bars, include_forming=include_forming)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Chart frame pull failed: %s", exc)
             return None
 
@@ -1925,7 +1922,7 @@ class MainWindow(QMainWindow):
                     export_frame = self._build_chart_frame_from_bars(
                         bars, include_forming=False
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug("Followup chart pull failed: %s", exc)
 
         export_frame = self._apply_followup_chart_snapshot(display_frame, export_frame)
@@ -1939,7 +1936,7 @@ class MainWindow(QMainWindow):
         Runs inline when already on the GUI thread; otherwise the Qt work is
         queued to the GUI thread and this call blocks until it completes.
         """
-        from PyQt6.QtCore import QMetaObject, QThread, Qt
+        from PyQt6.QtCore import QMetaObject, Qt, QThread
 
         if QThread.currentThread() is self.thread():
             return self._freeze_chart_for_followup(display_frame, export_frame)
@@ -2112,7 +2109,7 @@ class MainWindow(QMainWindow):
             # Record the time of this successful chart update
             self._last_refresh_ts = _time.monotonic()
             self._update_refresh_elapsed()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Frame build skipped: %s", exc)
 
         # Update submit button label after each successful data tick (throttled).
@@ -2193,7 +2190,7 @@ class MainWindow(QMainWindow):
             if data_source is not None:
                 try:
                     data_source.unsubscribe()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.warning("unsubscribe failed: %s", exc)
             self._last_frame_ready_bars = None
             self._incremental_available = False
@@ -2203,7 +2200,7 @@ class MainWindow(QMainWindow):
                 self._apply_tv_exchange_to_source(data_source)
                 try:
                     data_source.subscribe(new_symbol, new_tf)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.warning(
                         "subscribe(%s, %s) failed: %s", new_symbol, new_tf, exc
                     )
@@ -2223,7 +2220,7 @@ class MainWindow(QMainWindow):
             if ledger is not None:
                 try:
                     ledger.reset()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug("ledger.reset() failed: %s", exc)
 
             self._set_chart_refresh_paused(False)
@@ -2243,7 +2240,7 @@ class MainWindow(QMainWindow):
                 try:
                     from pa_agent.config.settings import save_settings
                     save_settings(settings)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug("Failed to persist symbol/tf to settings: %s", exc)
 
         finally:
@@ -2300,7 +2297,7 @@ class MainWindow(QMainWindow):
                 symbol,
                 timeframe,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Auto-incremental check failed: %s", exc)
 
     def _disable_chat_input(self) -> None:
@@ -2582,10 +2579,10 @@ class MainWindow(QMainWindow):
         if settings is not None:
             try:
                 settings.general.keep_analysis = enabled
-                from pa_agent.config.settings import save_settings
                 from pa_agent.config.paths import SETTINGS_JSON_PATH
+                from pa_agent.config.settings import save_settings
                 save_settings(settings, SETTINGS_JSON_PATH)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         wait_cb = getattr(self, "_wait_close_checkbox", None)
@@ -2673,7 +2670,7 @@ class MainWindow(QMainWindow):
                 ts_open = getattr(bar, "ts_open", None) or (bar[0] if hasattr(bar, "__getitem__") else None)
             if ts_open is not None:
                 self._keep_analysis_last_closed_ts = int(ts_open)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("_refresh_keep_analysis_sentinel error: %s", exc)
 
     def _check_keep_analysis(self, bars: Any) -> None:
@@ -2779,7 +2776,7 @@ class MainWindow(QMainWindow):
                     "持续跟踪分析：bars 数量不足（len=%d，需要=%d），跳过本轮",
                     len(bars), bar_count,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("_check_keep_analysis error: %s", exc, exc_info=True)
 
     def _start_demo_mode(self, mode: str) -> None:
@@ -2930,7 +2927,7 @@ class MainWindow(QMainWindow):
                 timeframe=meta.timeframe,
                 snapshot_ts_local_ms=meta.timestamp_local_ms,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._exit_demo_mode(silent=True)
             if _skip_retry < 8:
                 alt = self._try_load_random_demo_record()
@@ -2989,6 +2986,7 @@ class MainWindow(QMainWindow):
     def _on_demo_replay_done(self) -> None:
         """End demo analysis-in-progress state after replay completes."""
         from pathlib import Path
+
         from PyQt6.QtCore import QTimer
 
         self._analysis_in_progress = False
@@ -3035,7 +3033,6 @@ class MainWindow(QMainWindow):
 
     def _exit_demo_mode(self, *, silent: bool = False) -> None:
         """Leave demo mode and restore live controls."""
-        from pathlib import Path
 
         self._demo_auto_next_armed = False
         self._demo_waiting_flow_playback = False
@@ -3099,7 +3096,7 @@ class MainWindow(QMainWindow):
         try:
             canon_symbol = data_source.canonical_symbol(symbol)
             canon_tf = data_source.canonical_timeframe(timeframe)
-        except Exception as exc:  # noqa: BLE001 — normalization is best-effort
+        except Exception as exc:
             logger.debug("canonical_user_input fallback: %s", exc)
             return symbol, timeframe
         if isinstance(canon_symbol, str) and canon_symbol.strip():
@@ -3439,7 +3436,7 @@ class MainWindow(QMainWindow):
                     if _bts is not None:
                         _submit_closed_ts = int(_bts)
             self._keep_analysis_submit_closed_ts = _submit_closed_ts
-        except Exception:  # noqa: BLE001
+        except Exception:
             self._keep_analysis_submit_closed_ts = None
 
         from pa_agent.util.threading import CancelToken
@@ -3465,7 +3462,7 @@ class MainWindow(QMainWindow):
                 return
             try:
                 self._on_analysis_finished(decision)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._last_analysis_had_error = True
                 logger.exception("Analysis finished UI update failed: %s", exc)
             finally:
@@ -3615,7 +3612,7 @@ class MainWindow(QMainWindow):
             mode = "forced" if force_incremental else "auto"
             logger.info("Incremental analysis enabled (%s): %s", mode, detail)
             return previous, new_count, detail
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Incremental base lookup failed: %s", exc)
             return None, None, None
 
@@ -3643,7 +3640,7 @@ class MainWindow(QMainWindow):
                     "无法强制增量分析：当前 K 线与上一轮记录无法对齐。"
                     "可能缺口过大或 K 线数量/范围变化过大，请改用「提交分析」。"
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Incremental unavailable reason lookup failed: %s", exc)
         return "无法强制增量分析：未找到可用的上一轮记录。"
 
@@ -3775,7 +3772,7 @@ class MainWindow(QMainWindow):
                 try:
                     chart_levels = chart_levels_from_stage1_diagnosis(stage1_diag)
                     self._chart_widget.set_support_resistance(chart_levels)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
                 strip.set_metrics(metrics)
         else:
@@ -3982,7 +3979,7 @@ class MainWindow(QMainWindow):
             return
         try:
             cancel_on_retry = getattr(settings.general, "cancel_keep_analysis_on_retry", False)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return
         if not cancel_on_retry:
             return
@@ -3992,13 +3989,13 @@ class MainWindow(QMainWindow):
             # Persist to settings (same as _on_keep_analysis_checkbox_changed)
             try:
                 settings.general.keep_analysis = False
-                from pa_agent.config.settings import save_settings
                 from pa_agent.config.paths import SETTINGS_JSON_PATH
+                from pa_agent.config.settings import save_settings
                 save_settings(settings, SETTINGS_JSON_PATH)
                 logger.info(
                     "持续跟踪分析已因 %s 重试自动关闭", stage
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     def _on_record_ready(self, record: Any) -> None:
@@ -4007,7 +4004,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self._on_record_ready_impl(record)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._last_analysis_had_error = True
             logger.exception("Record ready handler failed: %s", exc)
 
@@ -4233,7 +4230,7 @@ class MainWindow(QMainWindow):
                     chat_cancel_token = _CancelToken()
                     panel.set_session(session, chat_cancel_token)
                     logger.info("FreeChatSession created for record %s", getattr(record.meta, "timestamp_local_iso", "?"))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("Failed to create FreeChatSession: %s", exc)
 
             panel.on_record_saved()
@@ -4289,9 +4286,7 @@ class MainWindow(QMainWindow):
                 and self._has_order_opportunity(decision_inner)
             )
             # 演示模式：等 finished 回调后再切「决策树可视化」，与真实流式结束顺序一致
-            if getattr(self, "_demo_mode", False):
-                pass
-            elif skip_flow_viz:
+            if getattr(self, "_demo_mode", False) or skip_flow_viz:
                 pass
             elif flow_viz.should_auto_play_after_load():
                 self._present_decision_flow_playback(force_play=False)
@@ -4374,12 +4369,14 @@ class MainWindow(QMainWindow):
                     if settings is not None
                     else 3,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("Trade record logging failed: %s", exc)
 
             try:
                 from pa_agent.notify.feishu_notifier import send_order_signal as send_feishu_order
-                from pa_agent.notify.pushplus_notifier import send_order_signal as send_pushplus_order
+                from pa_agent.notify.pushplus_notifier import (
+                    send_order_signal as send_pushplus_order,
+                )
                 from pa_agent.records.trade_logger import _TRADE_RECORDS_DIR
 
                 safe_sym = meta_symbol.replace("/", "-").replace("\\", "-")
@@ -4410,7 +4407,7 @@ class MainWindow(QMainWindow):
                         timeframe=meta_timeframe,
                         settings=settings,
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("下单信号通知失败（不影响主流程）: %s", exc)
 
         thread = threading.Thread(
@@ -4528,7 +4525,7 @@ class MainWindow(QMainWindow):
             # Demo replay owns a QTimer parented to this window; leaving it
             # running means callbacks into widgets that are being destroyed.
             self._exit_demo_mode(silent=True)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Demo mode teardown failed: %s", exc)
         try:
             ticker = getattr(self, "_elapsed_ticker", None)
@@ -4543,7 +4540,7 @@ class MainWindow(QMainWindow):
             # 后台 TV 探测线程：断开信号后再 join，避免结果回到已销毁的控件。
             self._cancel_tv_probe_worker(join_ms=_TV_PROBE_JOIN_TIMEOUT_MS)
             self._stop_refresh_loop()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Shutdown cleanup skipped: %s", exc)
         try:
             # 决策树可视化自己的三个定时器（特效/播放/重排）不属于上面的刷新循环，
@@ -4551,7 +4548,7 @@ class MainWindow(QMainWindow):
             flow_viz = getattr(self, "_decision_flow_viz_panel", None)
             if flow_viz is not None:
                 flow_viz.shutdown()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Decision flow panel shutdown failed: %s", exc)
         try:
             self._reap_zombie_probe_workers()
@@ -4635,8 +4632,8 @@ class MainWindow(QMainWindow):
 
     def _open_ai_model_settings_dialog(self, *, focus_api_key: bool = False) -> None:
         """打开 AI 模型设置对话框."""
-        from pa_agent.gui.ai_model_settings_dialog import AIModelSettingsDialog
         from pa_agent.config.settings import Settings
+        from pa_agent.gui.ai_model_settings_dialog import AIModelSettingsDialog
         from pa_agent.util.logging import update_api_key
 
         settings: Settings = self._ctx.settings  # type: ignore[assignment]
@@ -4652,7 +4649,7 @@ class MainWindow(QMainWindow):
             if client is not None:
                 try:
                     client._settings = settings.provider  # type: ignore[attr-defined]
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
             if settings is not None:
                 key = getattr(settings.provider, "api_key", "") or ""
@@ -4678,8 +4675,8 @@ class MainWindow(QMainWindow):
 
     def _open_feishu_settings_dialog(self) -> None:
         """打开飞书机器人设置对话框."""
-        from pa_agent.gui.feishu_settings_dialog import FeishuSettingsDialog
         from pa_agent.config.settings import Settings
+        from pa_agent.gui.feishu_settings_dialog import FeishuSettingsDialog
 
         settings: Settings = self._ctx.settings  # type: ignore[assignment]
         if settings is None:
@@ -4692,8 +4689,8 @@ class MainWindow(QMainWindow):
 
     def _open_general_settings_dialog(self) -> None:
         """打开通用设置对话框."""
-        from pa_agent.gui.general_settings_dialog import GeneralSettingsDialog
         from pa_agent.config.settings import Settings
+        from pa_agent.gui.general_settings_dialog import GeneralSettingsDialog
 
         settings: Settings = self._ctx.settings  # type: ignore[assignment]
         if settings is None:
@@ -4901,7 +4898,6 @@ class MainWindow(QMainWindow):
                 compute_incremental_bar_delta,
                 find_latest_successful_record,
             )
-            from pa_agent.data.snapshot import INDICATOR_WARMUP_BARS
 
             bar_count = self._analysis_bar_count()
             frame = self._build_chart_frame_from_bars(
@@ -4929,7 +4925,7 @@ class MainWindow(QMainWindow):
                 self._incremental_available = True
                 self._submit_btn.setText("增量分析")
                 return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # Common outcomes ("no prior record", "cannot align") arrive here
             # as control-flow ValueErrors; anything else would previously be
             # invisible.  Debug keeps the file log useful without spamming.
@@ -4990,7 +4986,7 @@ class MainWindow(QMainWindow):
                 bar_count=bar_count,
                 include_forming=False,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Snapshot failed: %s", exc)
             return None
 
@@ -5031,6 +5027,6 @@ class MainWindow(QMainWindow):
                 exp_reader=exp_reader,
                 settings=settings,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Could not build orchestrator: %s", exc)
             return None

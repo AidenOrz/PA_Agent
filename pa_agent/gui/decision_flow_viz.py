@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer
+from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -27,7 +27,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import pyqtSignal
 
 from pa_agent.ai.decision_tree import (
     _BRANCH_DISPLAY_ZH,
@@ -174,7 +173,7 @@ class _FlowScene(QGraphicsScene):
             _SCAN_BAND_H,
         )
 
-    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
+    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
         grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
         grad.setColorAt(0, QColor("#020711"))
         grad.setColorAt(0.48, QColor("#07111f"))
@@ -250,7 +249,7 @@ class _BranchEdge(QGraphicsObject):
         self._phase = 0.0  # 仅在脱离 scene 独立使用时作为兜底
         self.setZValue(1)
 
-    def boundingRect(self) -> QRectF:  # noqa: N802
+    def boundingRect(self) -> QRectF:
         return QRectF(self._p0, self._p1).normalized().adjusted(-40, -24, 40, 24)
 
     def is_active(self) -> bool:
@@ -360,7 +359,7 @@ class _PhaseBandItem(QGraphicsObject):
         self._title = title
         self.setZValue(2)
 
-    def boundingRect(self) -> QRectF:  # noqa: N802
+    def boundingRect(self) -> QRectF:
         return QRectF(-280, -16, 560, 32)
 
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
@@ -411,15 +410,15 @@ class _DecisionNode(QGraphicsObject):
                 tip.append(f"AI覆盖理由：{self._override_reason}")
         self.setToolTip("\n".join(tip))
 
-    def boundingRect(self) -> QRectF:  # noqa: N802
+    def boundingRect(self) -> QRectF:
         pad = 18
         return QRectF(-_NODE_W / 2 - pad, -pad, _NODE_W + pad * 2, _NODE_H + pad * 2)
 
-    def hoverEnterEvent(self, _event: Any) -> None:  # noqa: N802
+    def hoverEnterEvent(self, _event: Any) -> None:
         self._hover = True
         self.update()
 
-    def hoverLeaveEvent(self, _event: Any) -> None:  # noqa: N802
+    def hoverLeaveEvent(self, _event: Any) -> None:
         self._hover = False
         self.update()
 
@@ -590,7 +589,7 @@ class _AltBranchNode(QGraphicsObject):
             f"§{node_id} · 若选「{self._title}」\n{self._outcome}"
         )
 
-    def boundingRect(self) -> QRectF:  # noqa: N802
+    def boundingRect(self) -> QRectF:
         return QRectF(-_STUB_W / 2 - 6, -6, _STUB_W + 12, _STUB_H + 12)
 
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
@@ -643,7 +642,7 @@ class _TerminalNode(QGraphicsObject):
         value = getattr(scene, "anim_phase", 0.0) if scene is not None else 0.0
         return float(value) if isinstance(value, int | float) else 0.0
 
-    def boundingRect(self) -> QRectF:  # noqa: N802
+    def boundingRect(self) -> QRectF:
         return QRectF(-_TERMINAL_W / 2 - 8, -8, _TERMINAL_W + 16, _TERMINAL_H + 16)
 
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
@@ -706,7 +705,7 @@ class _EmptyHint(QGraphicsObject):
         super().__init__()
         self._text = text
 
-    def boundingRect(self) -> QRectF:  # noqa: N802
+    def boundingRect(self) -> QRectF:
         return QRectF(-240, -40, 480, 80)
 
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
@@ -837,11 +836,11 @@ def _build_playback_path(placed: list[_Placed], *, total_steps: int) -> list[QPo
 class _DecisionFlowGraphicsView(QGraphicsView):
     """Graphics view that re-applies default zoom once the viewport has a real size."""
 
-    def __init__(self, scene: QGraphicsScene, owner: "DecisionFlowVizPanel") -> None:
+    def __init__(self, scene: QGraphicsScene, owner: DecisionFlowVizPanel) -> None:
         super().__init__(scene)
         self._owner = owner
 
-    def resizeEvent(self, event) -> None:  # noqa: ANN001, N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if self._owner._needs_initial_refit:
             self._owner.schedule_refit_view()
@@ -969,7 +968,7 @@ class DecisionFlowVizPanel(QWidget):
             return
         self.refit_view()
 
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if self._window_closing:
             return
@@ -1078,7 +1077,7 @@ class DecisionFlowVizPanel(QWidget):
         pct = int(getattr(self._settings.general, "decision_flow_default_zoom_pct", 600))
         return max(0.25, pct / 100.0)
 
-    def eventFilter(self, obj: Any, event: QEvent) -> bool:  # noqa: N802
+    def eventFilter(self, obj: Any, event: QEvent) -> bool:
         if (
             self._play_active
             and obj is self._view.viewport()
@@ -1126,7 +1125,7 @@ class DecisionFlowVizPanel(QWidget):
             self.refit_view()
             self.playback_finished.emit()
 
-    def wheelEvent(self, event: Any) -> None:  # noqa: N802
+    def wheelEvent(self, event: Any) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             factor = math.pow(1.1, event.angleDelta().y() / 120.0)
             self._view.scale(factor, factor)
@@ -1166,28 +1165,16 @@ class DecisionFlowVizPanel(QWidget):
         gate_text = gate_result or ("short" if gate_shortcircuited else "ready")
         status_color = _OUTCOME_COLOR.get(outcome, _NEON_CYAN)
         self._hud_label.setText(
-            "<span style='color:{cyan}; font-weight:700;'>AI TACTICAL DECISION MATRIX</span>"
-            " &nbsp; <span style='color:{muted};'>|</span> &nbsp; "
-            "GATE <span style='color:{amber};'>{gate}</span>"
-            " &nbsp; <span style='color:{muted};'>|</span> &nbsp; "
-            "NODES <span style='color:{cyan};'>{nodes:02d}</span>"
-            " &nbsp; <span style='color:{muted};'>|</span> &nbsp; "
-            "G/D <span style='color:{violet};'>{gate_count}/{decision_count}</span>"
-            " &nbsp; <span style='color:{muted};'>|</span> &nbsp; "
-            "TERMINAL <span style='color:{status};'>§{terminal_id} {outcome}</span>"
-            .format(
-                cyan=_NEON_CYAN,
-                muted=T.TEXT_MUTED,
-                amber=_NEON_AMBER,
-                violet=_NEON_VIOLET,
-                status=status_color,
-                gate=gate_text.upper(),
-                nodes=node_count,
-                gate_count=gate_count,
-                decision_count=decision_count,
-                terminal_id=terminal_id,
-                outcome=outcome_zh,
-            )
+            f"<span style='color:{_NEON_CYAN}; font-weight:700;'>AI TACTICAL DECISION MATRIX</span>"
+            f" &nbsp; <span style='color:{T.TEXT_MUTED};'>|</span> &nbsp; "
+            f"GATE <span style='color:{_NEON_AMBER};'>{gate_text.upper()}</span>"
+            f" &nbsp; <span style='color:{T.TEXT_MUTED};'>|</span> &nbsp; "
+            f"NODES <span style='color:{_NEON_CYAN};'>{node_count:02d}</span>"
+            f" &nbsp; <span style='color:{T.TEXT_MUTED};'>|</span> &nbsp; "
+            f"G/D <span style='color:{_NEON_VIOLET};'>{gate_count}/{decision_count}</span>"
+            f" &nbsp; <span style='color:{T.TEXT_MUTED};'>|</span> &nbsp; "
+            f"TERMINAL <span style='color:{status_color};'>§{terminal_id} {outcome_zh}</span>"
+            
         )
 
     def _open_fullscreen(self) -> None:

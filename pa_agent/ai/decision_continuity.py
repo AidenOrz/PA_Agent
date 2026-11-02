@@ -343,7 +343,7 @@ def render_continuity_prompt_block(ctx: dict[str, Any]) -> str:
         f"- 程序判定：{status}",
         "",
         "### 裁定（按优先级）",
-        f"1. **未失效** → 默认 `order_type=不下单`、`terminal.outcome=wait`，"
+        "1. **未失效** → 默认 `order_type=不下单`、`terminal.outcome=wait`，"
         "在 watch_points 说明仍等待上一轮 setup 触发；"
         "**禁止**立即在相近结构位反手，除非 K1 收盘已触发失效。",
         f"2. **同结构位反手冷却**：{cooldown} 根 K 线内，"

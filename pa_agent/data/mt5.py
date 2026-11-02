@@ -12,7 +12,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from pa_agent.data.base import (
     DataSource,
@@ -92,7 +91,7 @@ class MT5Source(DataSource):
             try:
                 import MetaTrader5 as mt5  # type: ignore[import]
                 mt5.shutdown()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("MT5 shutdown error: %s", exc)
         self._connected = False
         logger.info("MT5Source disconnected")
@@ -109,7 +108,7 @@ class MT5Source(DataSource):
         try:
             import MetaTrader5 as mt5  # type: ignore[import]
             return mt5.symbol_info(name) is not None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("MT5 symbol_info(%s) failed: %s", name, exc)
             return False
 
@@ -123,7 +122,7 @@ class MT5Source(DataSource):
             symbols = mt5.symbols_get()
             if symbols:
                 return [s.name for s in symbols]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("MT5 list_symbols failed: %s", exc)
         return []
 
@@ -145,7 +144,7 @@ class MT5Source(DataSource):
             try:
                 import MetaTrader5 as mt5  # type: ignore[import]
                 mt5.symbol_select(symbol, True)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         logger.info("MT5Source subscribed: %s %s", symbol, timeframe)
 
@@ -177,7 +176,7 @@ class MT5Source(DataSource):
             tick_time = getattr(tick, "time", None)
             if tick_time:
                 return int(tick_time) * 1000
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("MT5 server_time_ms(%s) failed: %s", name, exc)
         return None
 
@@ -211,7 +210,7 @@ class MT5Source(DataSource):
         # Ensure the symbol is selected/subscribed in MT5 for real-time data
         try:
             mt5.symbol_select(self._symbol, True)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass  # Non-fatal; proceed with fetch
 
         # Fetch n+1 bars starting from position 0 (current forming bar)

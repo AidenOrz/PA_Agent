@@ -91,7 +91,7 @@ class ChartWidget(pg.PlotWidget):
         if self._latest_frame is not None:
             self._dirty = True
 
-    def set_frame(self, frame: "KlineFrame", *, fit_view: bool = False) -> None:
+    def set_frame(self, frame: KlineFrame, *, fit_view: bool = False) -> None:
         """Cache the latest KlineFrame; actual redraw happens on the timer."""
         if self._should_skip_redraw(frame):
             self._latest_frame = frame
@@ -103,7 +103,7 @@ class ChartWidget(pg.PlotWidget):
             self._fit_on_next_render = True
         self._dirty = True
 
-    def set_frame_now(self, frame: "KlineFrame", *, fit_view: bool = False) -> None:
+    def set_frame_now(self, frame: KlineFrame, *, fit_view: bool = False) -> None:
         """Apply *frame* to the chart immediately (bypass 30 Hz throttle)."""
         if self._should_skip_redraw(frame):
             self._latest_frame = frame
@@ -116,7 +116,7 @@ class ChartWidget(pg.PlotWidget):
         if fit_view:
             self.fit_view()
 
-    def _should_skip_redraw(self, frame: "KlineFrame") -> bool:
+    def _should_skip_redraw(self, frame: KlineFrame) -> bool:
         """Skip repaint when the screen already shows the same closed-only snapshot."""
         from pa_agent.data.snapshot import frame_is_pure_closed, frames_equal_for_chart
 
@@ -146,7 +146,7 @@ class ChartWidget(pg.PlotWidget):
         )
         self._first_frame_fitted = True
 
-    def displayed_frame(self) -> "KlineFrame | None":
+    def displayed_frame(self) -> KlineFrame | None:
         """Return the KlineFrame currently shown on the chart."""
         return self._latest_frame
 
@@ -184,7 +184,7 @@ class ChartWidget(pg.PlotWidget):
         Support/resistance lines are deliberately excluded: they come from the
         Stage-1 structure and exist regardless of the trade decision.
         """
-        return list(self._overlay._items)  # noqa: SLF001 - single owner
+        return list(self._overlay._items)
 
     def clear_decision_overlay(self) -> None:
         """Remove entry/TP/SL lines and direction marker; keep the current K-line frame."""
@@ -266,7 +266,7 @@ class ChartWidget(pg.PlotWidget):
                         p = getattr(item, "_sr_price", None)
                         if p is not None:
                             item.setPos(x_min, float(p))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     def clear_support_resistance(self) -> None:
@@ -299,7 +299,7 @@ class ChartWidget(pg.PlotWidget):
         top, bot = self._axis_vertical_range_wy()
         return abs(vx - edge) < _AXIS_RESIZE_EDGE_PX and top <= vy <= bot
 
-    def viewportEvent(self, ev):  # noqa: N802
+    def viewportEvent(self, ev):
         """Intercept viewport mouse events to handle price-axis width resizing.
 
         This is the canonical entry-point for viewport events in
@@ -369,7 +369,7 @@ class ChartWidget(pg.PlotWidget):
 
     # ── Internal rendering ────────────────────────────────────────────────────
 
-    def _render_frame(self, frame: "KlineFrame") -> None:
+    def _render_frame(self, frame: KlineFrame) -> None:
         """Rebuild all candle items, EMA line, and sequence labels."""
         self._clear_candles_and_labels()
         if self._ema_line is not None:
@@ -435,7 +435,7 @@ class ChartWidget(pg.PlotWidget):
 
     def _view_ranges_for_frame(
         self,
-        frame: "KlineFrame",
+        frame: KlineFrame,
     ) -> tuple[tuple[float, float], tuple[float, float]]:
         """Compute (x_range, y_range) for the newest ``_FIT_VISIBLE_BARS`` bars."""
         bars = frame.bars

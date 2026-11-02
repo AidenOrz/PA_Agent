@@ -26,8 +26,9 @@ STAGE2_VALIDATION_AUTO_RETRY = False
 import copy
 import dataclasses
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pa_agent.ai.deepseek_client import DeepSeekClient
@@ -38,12 +39,12 @@ if TYPE_CHECKING:
     from pa_agent.records.pending_writer import PendingWriter
 
 from pa_agent.ai.json_validator import Ok, ValidationError
+from pa_agent.data.base import KlineFrame
 from pa_agent.orchestrator.validation_retry import (
     StageName,
     ValidationRetryError,
     validate_with_retry,
 )
-from pa_agent.data.base import KlineFrame
 from pa_agent.records.schema import AnalysisRecord, RecordMeta
 from pa_agent.util.threading import CancelToken, OrchestratorEvent
 from pa_agent.util.timefmt import now_local_ms
@@ -191,7 +192,7 @@ def _emit_buffered_stream(
 
 def _build_empty_record(
     frame: KlineFrame,
-    settings: Optional["Settings"],
+    settings: Settings | None,
 ) -> AnalysisRecord:
     """Build a partial AnalysisRecord with meta populated from the frame."""
     ts_ms = now_local_ms()
@@ -420,13 +421,13 @@ class TwoStageOrchestrator:
 
     def __init__(
         self,
-        client: "DeepSeekClient",
-        assembler: "PromptAssembler",
+        client: DeepSeekClient,
+        assembler: PromptAssembler,
         router: Any,
-        validator: "JsonValidator",
-        pending_writer: "PendingWriter",
-        exp_reader: "ExperienceReader",
-        settings: Optional["Settings"] = None,
+        validator: JsonValidator,
+        pending_writer: PendingWriter,
+        exp_reader: ExperienceReader,
+        settings: Settings | None = None,
     ) -> None:
         self._client = client
         self._assembler = assembler

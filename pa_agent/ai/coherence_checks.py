@@ -425,7 +425,7 @@ def validate_bar_by_bar_vs_features(
     features = {f.seq: f for f in compute_kline_geometry_features(kline_frame)}
     bars = getattr(kline_frame, "bars", None)
     bars_by_seq = (
-        {int(getattr(b, "seq")): b for b in bars if getattr(b, "seq", None)} if bars else {}
+        {int(b.seq): b for b in bars if getattr(b, "seq", None)} if bars else {}
     )
 
     # Threshold bands (prompt-engineering semantics: follow-through and bar-type near

@@ -16,22 +16,13 @@ This module contains:
 
 from __future__ import annotations
 
-
-
 import logging
-
 import math
-
 from dataclasses import dataclass
-
 from typing import Any
-
-
 
 from pa_agent.ai.no_order import clear_decision_to_no_order
 from pa_agent.ai.section14 import section14_violated
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +186,7 @@ def check_preflight_data(frame: Any) -> PreflightResult:
 
         return _check_preflight_data_inner(frame)
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
 
         logger.warning("check_preflight_data: unexpected exception: %s", exc)
 
@@ -397,7 +388,7 @@ def _node_label(node_id: str) -> str:
 
         return _nl(node_id)
 
-    except Exception:  # noqa: BLE001
+    except Exception:
 
         return node_id
 
@@ -415,7 +406,7 @@ def build_program_trace_node(fill: NodeFill, *, tree: Any = None) -> dict[str, A
 
         question = _nl(fill.node_id, tree)
 
-    except Exception:  # noqa: BLE001
+    except Exception:
 
         question = fill.node_id
 
@@ -1358,9 +1349,7 @@ def judge_momentum_strength(frame: Any, direction: str = "neutral") -> NodeFill:
     )
     m1_strong = False
     if abs_floor_met:
-        if direction == "bullish" and bull_tb >= MOMENTUM_TREND_RATIO_STRONG * max(bear_tb, 1):
-            m1_strong = True
-        elif direction == "bearish" and bear_tb >= MOMENTUM_TREND_RATIO_STRONG * max(bull_tb, 1):
+        if (direction == "bullish" and bull_tb >= MOMENTUM_TREND_RATIO_STRONG * max(bear_tb, 1)) or (direction == "bearish" and bear_tb >= MOMENTUM_TREND_RATIO_STRONG * max(bull_tb, 1)):
             m1_strong = True
         # direction=neutral: M1 cannot be "dominant" — if the program itself calls
         # the direction neutral it means neither side leads convincingly.
@@ -1470,7 +1459,7 @@ def _get_signal_seq(out: dict[str, Any], bars: Any) -> int:
 
                         return seq
 
-    except Exception:  # noqa: BLE001
+    except Exception:
 
         pass
 
@@ -2850,7 +2839,7 @@ class DecisionNodeEngine:
             from pa_agent.ai.trend_context import build_trend_context
 
             out["trend_context"] = build_trend_context(frame, str(out.get("direction", "neutral")))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("build_trend_context failed: %s", exc)
 
 
@@ -2904,7 +2893,7 @@ class DecisionNodeEngine:
 
             features = {f.seq: f for f in raw_features}
 
-        except Exception:  # noqa: BLE001
+        except Exception:
 
             pass
 

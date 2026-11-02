@@ -42,7 +42,7 @@ def _scrub_crash_log() -> None:
 
 def enable_crash_diagnostics() -> None:
     """Write Python/native stack traces to logs/crash.log on fatal errors."""
-    global _crash_file, _enabled  # noqa: PLW0603
+    global _crash_file, _enabled
 
     if _enabled:
         return

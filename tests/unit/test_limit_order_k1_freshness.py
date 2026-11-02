@@ -7,7 +7,6 @@ from pa_agent.ai.json_validator import JsonValidator, Ok
 from pa_agent.config.settings import ValidationSettings
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 from pa_agent.util.trade_metrics import validate_limit_order_k1_freshness
-
 from tests.unit.test_trade_metrics_validation import _stage2_trade_obj
 
 

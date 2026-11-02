@@ -21,13 +21,12 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtWidgets import QMainWindow  # noqa: E402
+from PyQt6.QtWidgets import QMainWindow
 
-from pa_agent.app_context import AppContext  # noqa: E402
-from pa_agent.config.settings import Settings  # noqa: E402
-from pa_agent.data.base import KlineBar  # noqa: E402
-from pa_agent.data.westock_source import WeStockSource  # noqa: E402
-
+from pa_agent.app_context import AppContext
+from pa_agent.config.settings import Settings
+from pa_agent.data.base import KlineBar
+from pa_agent.data.westock_source import WeStockSource
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

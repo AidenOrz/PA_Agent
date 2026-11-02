@@ -323,9 +323,7 @@ def _balance_json_brackets(text: str) -> str:
             stack.append("{")
         elif ch == "[":
             stack.append("[")
-        elif ch == "}" and stack and stack[-1] == "{":
-            stack.pop()
-        elif ch == "]" and stack and stack[-1] == "[":
+        elif (ch == "}" and stack and stack[-1] == "{") or (ch == "]" and stack and stack[-1] == "["):
             stack.pop()
     closers = "".join("]" if opener == "[" else "}" for opener in reversed(stack))
     return text + closers
@@ -609,11 +607,11 @@ class JsonValidator:
                 _logging.getLogger(__name__).info("stage1 %s", msg)
 
             if getattr(self._validation, "stage1_coherence_checks", False):
-                from pa_agent.ai.decision_tree import validate_gate_result_consistency
                 from pa_agent.ai.coherence_checks import (
                     validate_incremental_stage1_coherence,
                     validate_stage1_coherence,
                 )
+                from pa_agent.ai.decision_tree import validate_gate_result_consistency
 
                 for msg in validate_gate_result_consistency(obj):
                     invalid.append(f"gate:{msg}")
@@ -688,8 +686,8 @@ class JsonValidator:
                 invalid.append(f"metrics:{msg}")
 
             if getattr(self._validation, "stage2_coherence_checks", False):
-                from pa_agent.ai.decision_tree import validate_stage2_trace_consistency
                 from pa_agent.ai.coherence_checks import validate_stage2_coherence
+                from pa_agent.ai.decision_tree import validate_stage2_trace_consistency
 
                 for msg in validate_stage2_trace_consistency(obj):
                     invalid.append(f"trace:{msg}")

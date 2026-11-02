@@ -33,7 +33,7 @@ def fake_tvdatafeed(monkeypatch: pytest.MonkeyPatch) -> dict:
 
     fake_ws = types.ModuleType("websocket")
 
-    class WebSocket:  # noqa: N801 - mirrors websocket.WebSocket
+    class WebSocket:
         pass
 
     fake_ws.WebSocket = WebSocket

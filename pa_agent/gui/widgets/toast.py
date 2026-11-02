@@ -1,7 +1,7 @@
 """ToastOverlay — lightweight non-blocking notification overlay."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 

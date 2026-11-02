@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -500,10 +499,10 @@ class DecisionPanel(QWidget):
                     f"有入场机会，但置信度 {conf_val} 低于阈值 {confidence_threshold}，本次按观望显示。"
                 )
                 reasoning = f"{prefix}\n\n{reasoning}" if reasoning else prefix
-        diag_conf = decision.get("diagnosis_confidence", None)
-        diag_conf_reasoning = decision.get("diagnosis_confidence_reasoning", None)
-        trade_conf = decision.get("trade_confidence", None)
-        trade_conf_reasoning = decision.get("trade_confidence_reasoning", None)
+        diag_conf = decision.get("diagnosis_confidence")
+        diag_conf_reasoning = decision.get("diagnosis_confidence_reasoning")
+        trade_conf = decision.get("trade_confidence")
+        trade_conf_reasoning = decision.get("trade_confidence_reasoning")
 
         self._apply_diagnosis_confidence(diag_conf, diag_conf_reasoning)
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pa_agent.config.settings import AIProviderSettings
@@ -125,7 +125,7 @@ def sync_qclaw_agent_provider_on_load(
                 after_model,
                 after_url,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to persist synced QClaw provider: %s", exc)
 
 
@@ -290,7 +290,7 @@ def qclaw_provider_settings(
     context_window: int = 2_000_000,
     *,
     prefer_relay: bool = False,
-) -> "AIProviderSettings | None":
+) -> AIProviderSettings | None:
     """Return AIProviderSettings for QClaw's public-gateway OpenClaw Agent."""
     from pa_agent.config.settings import AIProviderSettings
 

@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import copy
-from hypothesis import given, settings as h_settings
+
+from hypothesis import given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
+
 from pa_agent.ai.router import route_strategy_files
 
 _CYCLE_POSITIONS = [

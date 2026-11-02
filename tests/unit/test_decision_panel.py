@@ -5,14 +5,14 @@ import sys
 import time
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Deprecated: DecisionPanel prediction UI moved to FutureTrendPanel")
-from hypothesis import given, settings as h_settings
-from hypothesis import strategies as st
 
+pytestmark = pytest.mark.skip(reason="Deprecated: DecisionPanel prediction UI moved to FutureTrendPanel")
+from hypothesis import given
+from hypothesis import settings as h_settings
+from hypothesis import strategies as st
 from PyQt6.QtWidgets import QApplication
 
 from pa_agent.gui.decision_panel import DecisionPanel, _format_price, _parse_price
-
 
 # ── QApplication fixture ─────────────────────────────────────────────────────
 

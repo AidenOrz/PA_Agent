@@ -9,7 +9,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -607,7 +607,7 @@ class AkShareSource(DataSource):
             import baostock as bs
 
             bs.logout()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Baostock logout: %s", exc)
         self._baostock_logged_in = False
 

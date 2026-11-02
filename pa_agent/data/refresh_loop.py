@@ -5,7 +5,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from pa_agent.data.base import DataSource, DataSourceTransientError, KlineBar
+from pa_agent.data.base import DataSource, DataSourceTransientError
 from pa_agent.data.snapshot import INDICATOR_WARMUP_BARS
 
 if TYPE_CHECKING:
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 
 class RefreshLoop(QThread):
@@ -39,8 +39,8 @@ class RefreshLoop(QThread):
         data_source: DataSource,
         n_bars: int,
         interval_ms: int = 1000,
-        cancel_token: "CancelToken | None" = None,
-        parent: "QObject | None" = None,
+        cancel_token: CancelToken | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._source = data_source
@@ -51,7 +51,7 @@ class RefreshLoop(QThread):
         self._failure_threshold_s = 5.0
         self._in_flight = False  # guard against overlapping fetches
 
-    def run(self) -> None:  # noqa: C901
+    def run(self) -> None:
         """Main loop — runs on the worker thread."""
         failure_start: float | None = None
 
@@ -93,7 +93,7 @@ class RefreshLoop(QThread):
                     elapsed = time.monotonic() - failure_start
                     if elapsed >= self._failure_threshold_s and not user_msg:
                         self.status_changed.emit("数据延迟")
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.error("RefreshLoop unexpected error: %s", exc, exc_info=True)
             finally:
                 self._in_flight = False

@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
-import pytest
-from hypothesis import given, settings as h_settings
-from hypothesis import strategies as st
-from pa_agent.ai.json_validator import JsonValidator, Ok, ValidationError
 
+from hypothesis import given
+from hypothesis import settings as h_settings
+from hypothesis import strategies as st
+
+from pa_agent.ai.json_validator import Ok, ValidationError
 from tests.fixtures.validators import schema_test_validator
 
 validator = schema_test_validator()

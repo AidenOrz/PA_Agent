@@ -156,7 +156,7 @@ def reference_index_traded_today(*, now: datetime | None = None) -> bool | None:
         from pa_agent.data.eastmoney_client import fetch_stock_quote_payload
 
         payload = fetch_stock_quote_payload(_REFERENCE_INDEX_CODE)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("reference index snapshot failed: %s", exc)
         return None
     if not payload:

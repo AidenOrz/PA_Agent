@@ -6,14 +6,13 @@ import json
 from pa_agent.ai.json_validator import Ok, ValidationError
 from pa_agent.ai.stage2_normalizer import (
     _normalize_closed_enum,
+    _normalize_next_bar_prediction,
     _normalize_stage2_bar_analysis_enums,
     _strip_enum_suffix,
     normalize_stage2,
-    _normalize_next_bar_prediction,
 )
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 from tests.fixtures.validators import schema_test_validator
-
 
 # ── Closed enum annotation stripping (bar_type / freshness) ────────────────
 

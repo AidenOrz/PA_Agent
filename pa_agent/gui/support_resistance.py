@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import re
 import statistics
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -70,8 +71,8 @@ def filter_levels_near_price(
     lows: list[float] = []
     for bar in bars:
         try:
-            highs.append(float(getattr(bar, "high")))
-            lows.append(float(getattr(bar, "low")))
+            highs.append(float(bar.high))
+            lows.append(float(bar.low))
         except (TypeError, ValueError):
             continue
     if not highs or not lows:

@@ -21,7 +21,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pa_agent.config.settings import AIProviderSettings
@@ -450,7 +450,7 @@ def workbuddy_provider_settings(
     thinking: bool = True,
     reasoning_effort: str = "high",
     context_window: int = 2_000_000,
-) -> "AIProviderSettings | None":
+) -> AIProviderSettings | None:
     """Return AIProviderSettings for WorkBuddy's model route."""
     from pa_agent.config.settings import AIProviderSettings
 

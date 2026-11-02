@@ -194,6 +194,6 @@ class ChartPanel(QWidget):
         """Show hovered K-line context in the footer."""
         self._footer_left.setText(summary or self._footer_hint_text)
 
-    def chart_widget(self) -> "ChartWidget":
+    def chart_widget(self) -> ChartWidget:
         """Return the internal ``ChartWidget`` instance for signal connections."""
         return self._chart

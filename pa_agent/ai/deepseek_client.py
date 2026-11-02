@@ -5,14 +5,13 @@ import contextlib
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, TYPE_CHECKING
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pa_agent.util.threading import CancelToken
 
-from pa_agent.config.settings import AIProviderSettings
-from pa_agent.util.mask_secret import mask_secret
 from pa_agent.ai.mimo_compat import (
     ReasoningCache,
     is_mimo_provider,
@@ -22,6 +21,8 @@ from pa_agent.ai.mimo_compat import (
     response_message_dict,
     store_reasoning_from_response,
 )
+from pa_agent.config.settings import AIProviderSettings
+from pa_agent.util.mask_secret import mask_secret
 
 try:
     from openai import OpenAI as _OpenAI  # type: ignore[import]
@@ -662,7 +663,7 @@ class DeepSeekClient:
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
         context_window: int | None = None,
-        cancel_token: "CancelToken | None" = None,
+        cancel_token: CancelToken | None = None,
         timeout_s: float = 600.0,
     ) -> AIReply:
         """Send *messages* to the DeepSeek API and return a structured reply.
@@ -819,7 +820,7 @@ class DeepSeekClient:
         on_content_token: Callable[[str], None] | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
-        cancel_token: "CancelToken | None" = None,
+        cancel_token: CancelToken | None = None,
         timeout_s: float = 600.0,
     ) -> AIReply:
         """Stream *messages* to the DeepSeek API, calling callbacks per token.

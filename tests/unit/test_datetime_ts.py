@@ -1,7 +1,7 @@
 """Tests for timezone-safe market data timestamp helpers."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,7 +21,7 @@ def test_naive_datetime_uses_utc_wall_clock_not_local_timestamp():
 
 
 def test_aware_utc_datetime_converts_correctly():
-    dt = datetime(2024, 6, 15, 12, 30, 0, tzinfo=timezone.utc)
+    dt = datetime(2024, 6, 15, 12, 30, 0, tzinfo=UTC)
     assert datetime_to_ts_ms(dt) == 1_718_454_600_000
 
 
@@ -56,6 +56,6 @@ def test_naive_local_to_utc_uses_host_offset():
 
     local = datetime(2024, 6, 15, 20, 30, 0)
     utc = naive_local_to_utc(local)
-    assert utc.tzinfo == timezone.utc
+    assert utc.tzinfo == UTC
     assert utc.hour == 12
     assert utc.minute == 30

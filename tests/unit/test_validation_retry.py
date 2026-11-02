@@ -5,11 +5,11 @@ from dataclasses import dataclass
 
 import pytest
 
+from pa_agent.ai.json_validator import ValidationError
 from pa_agent.ai.retry_feedback import build_retry_feedback
 from pa_agent.ai.retry_policy import detect_cheat, should_retry
 from pa_agent.ai.stage2_normalizer import ensure_stage2_predictions
 from pa_agent.gui.stage2_payload import prepare_stage2_for_ui
-from pa_agent.ai.json_validator import ValidationError
 from pa_agent.orchestrator.validation_retry import (
     ValidationRetryError,
     validate_with_retry,
@@ -177,7 +177,7 @@ class _Reply:
         self.raw = {"content": content}
 
 
-def _settings(**overrides: object) -> "_Settings":
+def _settings(**overrides: object) -> _Settings:
     settings = _Settings()
     for key, value in overrides.items():
         setattr(settings, key, value)
@@ -186,7 +186,6 @@ def _settings(**overrides: object) -> "_Settings":
 
 def test_retry_stage2_disabled_never_calls_api():
     """retry_stage2=False 必须真正禁止阶段二重试（不能只改本地变量）。"""
-    from pa_agent.ai.json_validator import Ok
 
     validator = _CountingValidator(
         [

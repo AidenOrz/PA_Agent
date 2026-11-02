@@ -5,9 +5,9 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -91,9 +91,9 @@ class _ChatWorker(QThread):
 
     def __init__(
         self,
-        session: "FreeChatSession",
+        session: FreeChatSession,
         user_text: str,
-        cancel_token: "CancelToken",
+        cancel_token: CancelToken,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -110,7 +110,7 @@ class _ChatWorker(QThread):
                 on_content_token=lambda chunk: self.content_token.emit(chunk),
             )
             self.finished.emit(reply.content, reply.reasoning_content or "")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("ChatWorker error: %s", exc, exc_info=True)
             self.error.emit(str(exc))
 
@@ -120,18 +120,18 @@ class ConversationWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._session: Optional["FreeChatSession"] = None
-        self._cancel_token: Optional["CancelToken"] = None
-        self._worker: Optional[_ChatWorker] = None
+        self._session: FreeChatSession | None = None
+        self._cancel_token: CancelToken | None = None
+        self._worker: _ChatWorker | None = None
         self._sending = False
         self._red_warned = False
 
         self._turns: list[_TurnRecord] = []
         self._selected_row: int = -1
-        self._active_turn: Optional[_TurnRecord] = None
-        self._stage1_turn: Optional[_TurnRecord] = None
-        self._stage2_turn: Optional[_TurnRecord] = None
-        self._chat_turn: Optional[_TurnRecord] = None
+        self._active_turn: _TurnRecord | None = None
+        self._stage1_turn: _TurnRecord | None = None
+        self._stage2_turn: _TurnRecord | None = None
+        self._chat_turn: _TurnRecord | None = None
         self._stage1_t0: float = 0.0
         self._stage2_t0: float = 0.0
 
@@ -320,9 +320,7 @@ class ConversationWidget(QWidget):
         self._selected_row = row
         record = self._turns[row]
 
-        if record is self._active_turn:
-            self._mount_turn(record)
-        elif user_initiated:
+        if record is self._active_turn or user_initiated:
             self._mount_turn(record)
         else:
             self._show_collapsed_placeholder(record)
@@ -538,8 +536,8 @@ class ConversationWidget(QWidget):
 
     def set_session(
         self,
-        session: "FreeChatSession",
-        cancel_token: "CancelToken",
+        session: FreeChatSession,
+        cancel_token: CancelToken,
     ) -> None:
         self._session = session
         self._cancel_token = cancel_token

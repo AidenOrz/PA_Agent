@@ -9,12 +9,11 @@ Must be started inside the QClaw gateway process tree (via gateway ``/exec``).
 from __future__ import annotations
 
 import argparse
-import os
 import http.server
 import json
 import logging
+import os
 import socket
-import sys
 import threading
 import time
 import urllib.error

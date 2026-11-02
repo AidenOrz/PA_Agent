@@ -115,7 +115,7 @@ class SummaryStrip(QWidget):
         for card in self._cards:
             card.set_value("—")
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._relayout()
 

@@ -12,14 +12,13 @@ import logging
 import logging.handlers
 import re
 from pathlib import Path
-from typing import List
 
 from pa_agent.config.paths import LOG_FILE_PATH
 from pa_agent.util.mask_secret import mask_secret
 
 # ── Module-level state ────────────────────────────────────────────────────────
 
-_active_formatters: List["MaskingFormatter"] = []
+_active_formatters: list[MaskingFormatter] = []
 _configured: bool = False
 
 # Shapes that are secrets no matter which config field they came from.  Order
@@ -58,7 +57,7 @@ class MaskingFormatter(logging.Formatter):
         self._secrets: set[str] = set()
         self.set_api_key(api_key)
 
-    def format(self, record: logging.LogRecord) -> str:  # noqa: A003
+    def format(self, record: logging.LogRecord) -> str:
         message = super().format(record)
         for secret in self._secrets:
             message = message.replace(secret, mask_secret(secret))
@@ -108,7 +107,7 @@ class _RootDirectNoiseFilter(logging.Filter):
     are filtered below WARNING.
     """
 
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+    def filter(self, record: logging.LogRecord) -> bool:
         if record.name == "root":
             return record.levelno >= logging.WARNING
         return True
@@ -133,7 +132,7 @@ def configure_logging(api_key: str = "") -> None:
 
     If handlers were removed after a prior configure_logging call, re-attaches them.
     """
-    global _configured  # noqa: PLW0603
+    global _configured
 
     if _configured:
         if api_key:

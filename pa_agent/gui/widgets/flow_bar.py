@@ -4,7 +4,6 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
-
 _COLORS = {
     "idle":   {"bg": "#1c2128", "border": "#484f58", "glow": None},
     "done":   {"bg": "#22c55e", "border": "#22c55e", "glow": "rgba(34,197,94,0.18)"},

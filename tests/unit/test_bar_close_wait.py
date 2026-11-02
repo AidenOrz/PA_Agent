@@ -114,6 +114,7 @@ def test_forming_closed_with_server_now_when_local_lags() -> None:
 
 def test_reference_now_ms_uses_server_time_ms() -> None:
     import time
+
     from pa_agent.data.bar_close_wait import reference_now_ms
 
     # Simulate a fresh broker tick: server time is very close to local time

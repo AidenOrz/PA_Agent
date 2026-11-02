@@ -15,8 +15,8 @@ import pytest
 import pa_agent.util.logging as logging_module
 from pa_agent.config.paths import LOG_FILE_PATH
 from pa_agent.util.logging import (
-    _RootDirectNoiseFilter,
     _QUIET_LOGGER_NAMES,
+    _RootDirectNoiseFilter,
     configure_logging,
 )
 

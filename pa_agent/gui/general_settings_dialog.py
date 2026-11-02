@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QGroupBox,
-    QHBoxLayout,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -20,8 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pa_agent.config.settings import Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
+from pa_agent.config.settings import Settings, save_settings
 
 
 class GeneralSettingsDialog(QDialog):

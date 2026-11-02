@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from pa_agent.data.market_defaults import (
     GOLD_MT5_SYMBOL,
-    GOLD_TV_EXCHANGE,
     GOLD_TV_SYMBOL,
+    TV_CRYPTO_EXCHANGES,
+    TV_EQUITY_EXCHANGES,
+    TV_GOLD_SYMBOL_BY_EXCHANGE,
     ashare_tv_probe_order,
     infer_ashare_tv_exchange,
     is_partial_tv_symbol_input,
@@ -17,7 +19,6 @@ from pa_agent.data.market_defaults import (
     tv_auto_probe_plan,
     tv_forex_auto_probe_plan,
 )
-from pa_agent.data.market_defaults import TV_CRYPTO_EXCHANGES, TV_EQUITY_EXCHANGES, TV_GOLD_SYMBOL_BY_EXCHANGE
 from pa_agent.data.tradingview import TV_EXCHANGE_PRESETS
 
 

@@ -20,8 +20,8 @@ from pa_agent.data.market_defaults import (
     sanitize_tv_exchange_for_symbol,
     tv_auto_probe_plan,
 )
-from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError
 from pa_agent.data.tradingview_errors import format_tradingview_fetch_error
+from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class TradingViewSource(DataSource):
             # connection fails faster instead of freezing the UI.
             try:
                 setattr(self._tv, _TV_WS_TIMEOUT_ATTR, _TV_WS_TIMEOUT_S)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.debug("Could not override tvDatafeed ws timeout", exc_info=True)
             self._connected = True
             logger.info("TradingViewSource connected (anonymous=%s)", not self._username)
@@ -293,7 +293,7 @@ class TradingViewSource(DataSource):
                         proxy_url = TradingViewSource._proxy_url_for_server(server)
                         if host and port and proxy_url:
                             return proxy_url, host, port, "registry"
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
         # 3. Common local proxy ports (Clash / V2Ray / Shadowsocks)
@@ -370,7 +370,7 @@ class TradingViewSource(DataSource):
         try:
             s.connect((host, port))
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
         finally:
             s.close()
@@ -415,12 +415,12 @@ class TradingViewSource(DataSource):
             return
         try:
             ws.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug("tvDatafeed socket close failed", exc_info=True)
         finally:
             try:
                 tv.ws = None
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     # ── Discovery ─────────────────────────────────────────────────────────────
@@ -541,7 +541,7 @@ class TradingViewSource(DataSource):
             if self.on_probe_status is not None:
                 try:
                     self.on_probe_status(symbol, exchange, label)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
             try:
                 df = self._fetch_hist_with_retry(

@@ -10,11 +10,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from tests.e2e.smoke_support import SmokeDataSource, make_smoke_ctx
-from tests.fixtures.kline_bars import make_newest_first_bars
-from tests.fixtures.validators import schema_test_validator
-from pa_agent.ai.router import route_strategy_files
-
 from tests.fixtures.ai_payloads import VALID_STAGE1, VALID_STAGE2_ORDER
+from tests.fixtures.kline_bars import make_newest_first_bars
 
 CHAT_REPLY_CONTENT = "This is a follow-up AI response."
 
@@ -73,9 +70,9 @@ def _make_ctx(tmp_path):
 @pytest.mark.e2e
 def test_free_chat_after_analysis(qtbot, tmp_path):
     """After two-stage analysis, a FreeChatSession can send one turn."""
+    from pa_agent.ai.session_ledger import SessionTokenLedger
     from pa_agent.gui.main_window import MainWindow
     from pa_agent.orchestrator.free_chat import FreeChatSession
-    from pa_agent.ai.session_ledger import SessionTokenLedger
     from pa_agent.util.threading import CancelToken
 
     ctx, pending_writer = _make_ctx(tmp_path)

@@ -19,8 +19,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pa_agent.config.settings import Settings, save_settings
-from pa_agent.config.paths import SETTINGS_JSON_PATH
 from pa_agent.ai.qclaw_connector import (
     detect_qclaw,
     is_openclaw_model,
@@ -31,6 +29,8 @@ from pa_agent.ai.workbuddy_connector import (
     is_openclaw_wb_model,
     should_use_workbuddy_provider,
 )
+from pa_agent.config.paths import SETTINGS_JSON_PATH
+from pa_agent.config.settings import Settings, save_settings
 
 _API_KEY_HELP_URL = "https://my.feishu.cn/wiki/CUV1wUKWxiQGhekQdRvcZQQ2ncf"
 _AGENT_TUTORIAL_URL = (
@@ -217,7 +217,8 @@ class AIModelSettingsDialog(QDialog):
         from PyQt6.QtWidgets import QDialog as _QDialog
         dlg = _QDialog(self)
         dlg.setWindowTitle("获取无限Token")
-        from PyQt6.QtWidgets import QVBoxLayout as _VBox, QDialogButtonBox as _DBB
+        from PyQt6.QtWidgets import QDialogButtonBox as _DBB
+        from PyQt6.QtWidgets import QVBoxLayout as _VBox
         layout = _VBox(dlg)
         label = QLabel(
             "获取无限Token方法需付费49.9元，付费后你将获得<br>"

@@ -14,9 +14,8 @@ import os
 import tempfile
 import threading
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from pa_agent.config.paths import sanitize_filename_component
 from pa_agent.records.schema import AnalysisRecord, FollowupTurn
@@ -31,7 +30,7 @@ def _default_logger() -> logging.Logger:
 
 def _ms_to_local_datetime(ms: int) -> datetime:
     """Convert epoch milliseconds to local datetime."""
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).astimezone()
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).astimezone()
 
 
 def build_record_id(record: AnalysisRecord) -> str:
@@ -60,9 +59,9 @@ class PendingWriter:
 
     def __init__(
         self,
-        pending_dir: Optional[Path] = None,
+        pending_dir: Path | None = None,
         event_bus=None,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
         api_key: str = "",
     ) -> None:
         if pending_dir is None:
@@ -227,7 +226,7 @@ class PendingWriter:
         if self._event_bus is not None:
             try:
                 self._event_bus.emit("disk_error", {"path": str(path), "error": str(exc)})
-            except Exception as bus_exc:  # noqa: BLE001
+            except Exception as bus_exc:
                 self._logger.error(
                     "PendingWriter: event_bus emit failed: %s", bus_exc
                 )

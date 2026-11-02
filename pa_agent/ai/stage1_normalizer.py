@@ -534,7 +534,7 @@ def normalize_stage1(
         try:
             from pa_agent.ai.decision_nodes import DecisionNodeEngine
             DecisionNodeEngine.apply_stage1(out, kline_frame)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("DecisionNodeEngine.apply_stage1 failed: %s", exc)
 
     if "strategy_files_needed" not in out or out.get("strategy_files_needed") is None:
@@ -548,7 +548,7 @@ def normalize_stage1(
 
                 out["strategy_files_needed"] = route_strategy_files(out)
                 logger.debug("Filled strategy_files_needed from router")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug("router fallback for strategy_files_needed failed: %s", exc)
                 out.setdefault("strategy_files_needed", [])
     else:
@@ -563,7 +563,7 @@ def normalize_stage1(
             from pa_agent.ai.market_features import build_program_features_dict
 
             out["program_features"] = build_program_features_dict(kline_frame)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("build_program_features_dict failed: %s", exc)
 
     ensure_detected_patterns_coherent(out, kline_frame=kline_frame)
@@ -598,7 +598,7 @@ def normalize_stage1(
             from pa_agent.ai.structure_levels import refresh_stage1_support_resistance
 
             refresh_stage1_support_resistance(out, kline_frame)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("refresh_stage1_support_resistance failed: %s", exc)
 
     return out

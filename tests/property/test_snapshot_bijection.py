@@ -1,11 +1,11 @@
 """Property-based tests for analysis snapshot from bar lists (PR1)."""
 from __future__ import annotations
 
-import math
-
-from hypothesis import given, settings as h_settings
-from hypothesis import strategies as st
 import pytest
+from hypothesis import given
+from hypothesis import settings as h_settings
+from hypothesis import strategies as st
+
 pytestmark = pytest.mark.skip(reason="Deprecated: forming-bar clock and sequence contract changed")
 
 from pa_agent.data.base import KlineBar

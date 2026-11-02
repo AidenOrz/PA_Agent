@@ -13,7 +13,6 @@ pytest.importorskip("PyQt6")
 
 from pa_agent.util.mask_secret import mask_secret
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 PLAINTEXT_KEY = "sk-test-1234567890abcdef"

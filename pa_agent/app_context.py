@@ -27,30 +27,28 @@ class AppContext:
     ledger: Any = None            # SessionTokenLedger
 
     @classmethod
-    def bootstrap(cls) -> "AppContext":
+    def bootstrap(cls) -> AppContext:
         """Wire all real components and return a fully initialised AppContext."""
+        from pa_agent.ai.deepseek_client import DeepSeekClient
+        from pa_agent.ai.json_validator import JsonValidator
+        from pa_agent.ai.prompt_assembler import PromptAssembler
+        from pa_agent.ai.router import route_strategy_files
+        from pa_agent.ai.session_ledger import SessionTokenLedger
         from pa_agent.config.paths import (
-            SETTINGS_JSON_PATH,
-            RECORDS_PENDING_DIR,
             EXPERIENCE_DIR,
             PROMPT_DIR,
+            RECORDS_PENDING_DIR,
+            SETTINGS_JSON_PATH,
         )
         from pa_agent.config.settings import load_settings
+        from pa_agent.data.factory import create_data_source, normalize_data_source_kind
+        from pa_agent.records.experience_reader import ExperienceReader
+        from pa_agent.records.pending_writer import PendingWriter
+        from pa_agent.util.event_bus import EventBus
         from pa_agent.util.logging import (
             configure_logging,
             register_settings_secrets,
-            update_api_key,
         )
-        from pa_agent.util.event_bus import EventBus
-        from pa_agent.util.mask_secret import mask_secret
-        from pa_agent.data.factory import create_data_source, normalize_data_source_kind
-        from pa_agent.ai.deepseek_client import DeepSeekClient
-        from pa_agent.ai.prompt_assembler import PromptAssembler
-        from pa_agent.ai.router import route_strategy_files
-        from pa_agent.ai.json_validator import JsonValidator
-        from pa_agent.ai.session_ledger import SessionTokenLedger
-        from pa_agent.records.pending_writer import PendingWriter
-        from pa_agent.records.experience_reader import ExperienceReader
 
         # ── Settings ──────────────────────────────────────────────────────────
         settings = load_settings(SETTINGS_JSON_PATH)
@@ -106,7 +104,7 @@ class AppContext:
                 settings.general.last_symbol,
                 settings.general.last_timeframe,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             app_logger.warning("Initial data source subscription failed: %s", exc)
 
         # ── AI client ─────────────────────────────────────────────────────────

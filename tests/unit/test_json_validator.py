@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from pa_agent.ai.json_validator import (
     JsonValidator,
     Ok,

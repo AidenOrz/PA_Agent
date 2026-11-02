@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Shared test infrastructure for TwoStageOrchestrator integration tests."""
 from __future__ import annotations
 

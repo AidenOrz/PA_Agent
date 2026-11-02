@@ -225,8 +225,8 @@ def _render_chart(bars_newest_first: list[Any], ema20_newest_first: list[float],
     try:
         import matplotlib
         matplotlib.use("Agg")  # non-interactive backend
-        import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
+        import matplotlib.pyplot as plt
         from matplotlib.lines import Line2D
     except ImportError:
         logger.warning("matplotlib not installed; skipping chart generation")
@@ -508,7 +508,7 @@ def save_trade_record(
             model_name=model_name,
             structure_flip_cooldown_bars=structure_flip_cooldown_bars,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("save_trade_record failed: %s", exc, exc_info=True)
 
 
@@ -568,7 +568,7 @@ def _save_trade_record_impl(
                 trade_confidence=str(dec.get("trade_confidence") or ""),
                 estimated_win_rate=str(dec.get("estimated_win_rate") or ""),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("chart render failed: %s", exc)
 
     # ── Decision trace summary (node_id + answer, compact) ───────────────────

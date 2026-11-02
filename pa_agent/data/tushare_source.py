@@ -10,13 +10,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from pa_agent.config.settings import Settings
+from pa_agent.data.bar_close_wait import timeframe_to_seconds
 from pa_agent.data.base import (
     DataSource,
     DataSourceTransientError,
     KlineBar,
     normalize_kline_bar,
 )
-from pa_agent.data.bar_close_wait import timeframe_to_seconds
 from pa_agent.data.kline_adjust import get_kline_adjust
 from pa_agent.data.market_defaults import TV_SSE_INDEX_CODES
 

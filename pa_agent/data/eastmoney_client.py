@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Callable, Iterator
+from typing import Any
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -306,7 +307,7 @@ def _http_get(
                     referer=referer,
                     host_header=host_header,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_exc = exc
             if not _is_transient_http_error(exc):
                 raise
@@ -369,7 +370,7 @@ def _get_json_on_hosts(
                     referer=referer,
                     host_header=effective_host_header,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_exc = exc
                 if not _is_transient_http_error(exc):
                     raise EastMoneyTransientError(str(exc)) from exc
@@ -491,7 +492,7 @@ def _fallback_daily_rows(
         return fallback_daily(
             symbol, start_date=start_date, end_date=end_date, adjust=adjust
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("daily fallback failed for %s: %s", symbol, exc)
         return []
 
@@ -579,7 +580,7 @@ def _fallback_minute_rows(
         return fallback_minute(
             symbol, period=str(period), start_date=start_date, end_date=end_date
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("minute fallback failed for %s: %s", symbol, exc)
         return []
 
@@ -978,7 +979,7 @@ def _fallback_spot_quote(symbol: str) -> dict[str, Any] | None:
         from pa_agent.data.ashare_fallback import fallback_spot_quote
 
         return fallback_spot_quote(symbol)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("spot fallback failed for %s: %s", symbol, exc)
         return None
 
@@ -989,7 +990,7 @@ def _fallback_order_book(symbol: str):
         from pa_agent.data.ashare_fallback import fallback_order_book
 
         return fallback_order_book(symbol)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("order book fallback failed for %s: %s", symbol, exc)
         return None
 
@@ -1017,7 +1018,7 @@ def fetch_stock_tick_details(
     tail: int = 40,
 ) -> list:
     """当日逐笔成交（``/api/qt/stock/details/get``）。"""
-    from pa_agent.data.eastmoney_quote import TickTrade, parse_tick_lines
+    from pa_agent.data.eastmoney_quote import parse_tick_lines
 
     code = symbol[-6:] if len(symbol) > 6 else symbol
     params = {

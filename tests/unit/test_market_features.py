@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from pa_agent.ai.market_features import compute_simple_market_features, render_simple_market_features
+from pa_agent.ai.market_features import (
+    compute_simple_market_features,
+    render_simple_market_features,
+)
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 
 

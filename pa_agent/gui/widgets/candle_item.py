@@ -34,7 +34,7 @@ class CandleItem(pg.GraphicsObject):
         When True, draw the unclosed bar as a hollow ghost candle (live chart only).
     """
 
-    def __init__(self, bar: "KlineBar", x_pos: int, *, forming: bool = False) -> None:
+    def __init__(self, bar: KlineBar, x_pos: int, *, forming: bool = False) -> None:
         super().__init__()
         self._bar = bar
         self._x = x_pos
@@ -81,7 +81,7 @@ class CandleItem(pg.GraphicsObject):
 
         p.end()
 
-    def _paint_closed(self, p: QPainter, bar: "KlineBar", x: float) -> None:
+    def _paint_closed(self, p: QPainter, bar: KlineBar, x: float) -> None:
         color = _COLOR_UP if bar.close >= bar.open else _COLOR_DOWN
         p.setPen(QPen(color, 0))
         p.setBrush(color)
@@ -91,7 +91,7 @@ class CandleItem(pg.GraphicsObject):
         p.drawRect(body_rect)
         self._paint_wicks(p, bar, x, body_top, body_bottom, QPen(color, 0))
 
-    def _paint_forming(self, p: QPainter, bar: "KlineBar", x: float) -> None:
+    def _paint_forming(self, p: QPainter, bar: KlineBar, x: float) -> None:
         base = _COLOR_UP if bar.close >= bar.open else _COLOR_DOWN
         outline = QColor(base.red(), base.green(), base.blue(), 255)
         fill = QColor(base.red(), base.green(), base.blue(), 70)
@@ -123,7 +123,7 @@ class CandleItem(pg.GraphicsObject):
         p.drawRect(body_rect)
 
     @staticmethod
-    def _body_bounds(bar: "KlineBar") -> tuple[float, float]:
+    def _body_bounds(bar: KlineBar) -> tuple[float, float]:
         body_top = max(bar.open, bar.close)
         body_bottom = min(bar.open, bar.close)
         body_height = body_top - body_bottom
@@ -136,7 +136,7 @@ class CandleItem(pg.GraphicsObject):
     @staticmethod
     def _paint_wicks(
         p: QPainter,
-        bar: "KlineBar",
+        bar: KlineBar,
         x: float,
         body_top: float,
         body_bottom: float,

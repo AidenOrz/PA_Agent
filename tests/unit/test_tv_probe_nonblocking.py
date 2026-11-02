@@ -17,11 +17,10 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from pa_agent.app_context import AppContext  # noqa: E402
-from pa_agent.config.settings import Settings  # noqa: E402
-from pa_agent.gui import main_window as mw  # noqa: E402
-
-import pa_agent.data.tradingview_connectivity as tv_conn  # noqa: E402
+import pa_agent.data.tradingview_connectivity as tv_conn
+from pa_agent.app_context import AppContext
+from pa_agent.config.settings import Settings
+from pa_agent.gui import main_window as mw
 
 
 class _TvStubSource:

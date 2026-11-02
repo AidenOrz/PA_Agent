@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 
 from pa_agent.ai.json_validator import Ok
-from tests.fixtures.validators import schema_test_validator
 from pa_agent.ai.stage2_normalizer import normalize_stage2
 from pa_agent.ai.trace_normalize import (
     fix_bar_range_string,
@@ -12,6 +11,7 @@ from pa_agent.ai.trace_normalize import (
     normalize_trace_item,
     normalize_trace_list,
 )
+from tests.fixtures.validators import schema_test_validator
 from tests.integration.conftest import VALID_STAGE2
 
 

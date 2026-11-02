@@ -108,6 +108,6 @@ def state_after_atr(
 ) -> AtrState:
     """Return the AtrState after processing all bars."""
     state = make_atr_state(period)
-    for h, l, c in zip(highs, lows, closes):
+    for h, l, c in zip(highs, lows, closes, strict=False):
         state = atr_incremental(state, h, l, c)
     return state

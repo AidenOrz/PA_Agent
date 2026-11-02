@@ -16,10 +16,10 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from pa_agent.app_context import AppContext  # noqa: E402
-from pa_agent.config.settings import Settings  # noqa: E402
-from pa_agent.gui import main_window as mw  # noqa: E402
-from pa_agent.util.threading import OrchestratorEvent  # noqa: E402
+from pa_agent.app_context import AppContext
+from pa_agent.config.settings import Settings
+from pa_agent.gui import main_window as mw
+from pa_agent.util.threading import OrchestratorEvent
 
 
 class _FakeFlowBar:

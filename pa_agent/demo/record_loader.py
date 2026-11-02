@@ -43,7 +43,7 @@ def try_load_analysis_record(path: Path) -> AnalysisRecord | None:
     """Load *path*; return None if the file is unreadable or invalid."""
     try:
         return load_analysis_record(path)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Skip demo record %s: %s", path.name, exc)
         return None
 

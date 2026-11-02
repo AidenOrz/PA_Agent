@@ -22,7 +22,6 @@ from hypothesis import strategies as st
 
 from pa_agent.records.schema import AnalysisRecord, RecordMeta
 
-
 # ── Strategies ────────────────────────────────────────────────────────────────
 
 # Safe floats: avoid NaN, infinity, and values that lose precision in JSON

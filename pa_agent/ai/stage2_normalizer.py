@@ -461,12 +461,9 @@ def _ensure_decision_required_fields(
         if "estimated_win_rate" not in decision:
             decision["estimated_win_rate"] = None
             changed = True
-        if decision.get("estimated_win_rate_reasoning") is not None and not isinstance(
+        if (decision.get("estimated_win_rate_reasoning") is not None and not isinstance(
             decision.get("estimated_win_rate_reasoning"), str
-        ):
-            decision["estimated_win_rate_reasoning"] = None
-            changed = True
-        elif "estimated_win_rate_reasoning" not in decision:
+        )) or "estimated_win_rate_reasoning" not in decision:
             decision["estimated_win_rate_reasoning"] = None
             changed = True
     terminal = out.get("terminal")
@@ -636,7 +633,7 @@ def _program_follow_through(kline_frame: Any, seq: int | None) -> str | None:
         for feat in compute_kline_geometry_features(kline_frame):
             if feat.seq == seq:
                 return str(feat.follow_through_1_2 or "").strip().lower() or None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("follow-through probe failed for K%s: %s", seq, exc)
     return None
 
@@ -1441,7 +1438,7 @@ def normalize_stage2(
         try:
             from pa_agent.ai.decision_nodes import DecisionNodeEngine
             DecisionNodeEngine.apply_stage2(out, kline_frame, stage1_json)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("DecisionNodeEngine.apply_stage2 failed: %s", exc)
 
     normalize_stage2_traces(
@@ -1597,7 +1594,7 @@ def normalize_stage2(
                 cooldown_bars=structure_flip_cooldown_bars,
             )
             out = apply_continuity_guard(out, ctx)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("apply_continuity_guard failed: %s", exc)
 
     return out

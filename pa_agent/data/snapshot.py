@@ -107,8 +107,8 @@ def compute_indicators(bars: list[KlineBar]) -> IndicatorBundle:
     Indicators are computed on the reversed (oldest-first) sequence and then
     reversed back so that index *i* aligns with ``bars[i]`` (K1 at index 0).
     """
-    from pa_agent.indicators.ema import ema_full
     from pa_agent.indicators.atr import atr_full
+    from pa_agent.indicators.ema import ema_full
 
     # bars is newest-first; indicators need oldest-first input
     bars_asc = list(reversed(bars))

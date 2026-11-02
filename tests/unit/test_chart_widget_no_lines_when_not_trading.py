@@ -88,7 +88,7 @@ class TestNoLinesWhenNotTrading:
 
     def test_short_decision_shows_down_arrow(self, chart_widget, qtbot):
         """做空 decision draws a ▼ marker at the newest bar."""
-        from pa_agent.data.base import KlineBar, KlineFrame, IndicatorBundle
+        from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 
         bars = tuple(
             KlineBar(

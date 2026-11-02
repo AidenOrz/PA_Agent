@@ -10,7 +10,6 @@ as the source of truth for defaults.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from pa_agent.config.paths import PROJECT_ROOT
 from pa_agent.config.settings import Settings

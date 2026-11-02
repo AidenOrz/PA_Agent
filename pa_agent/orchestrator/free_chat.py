@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pa_agent.ai.deepseek_client import DeepSeekClient
@@ -69,12 +70,12 @@ class FreeChatSession:
     def __init__(
         self,
         base_record: AnalysisRecord,
-        client: "DeepSeekClient",
-        assembler: "PromptAssembler",
-        pending_writer: "PendingWriter",
-        ledger: "SessionTokenLedger",
-        settings: Optional["Settings"] = None,
-        kline_snapshot_fn: Optional[Callable[[], str]] = None,
+        client: DeepSeekClient,
+        assembler: PromptAssembler,
+        pending_writer: PendingWriter,
+        ledger: SessionTokenLedger,
+        settings: Settings | None = None,
+        kline_snapshot_fn: Callable[[], str] | None = None,
     ) -> None:
         self._base_record = base_record
         self._client = client
@@ -249,8 +250,8 @@ class FreeChatSession:
         self,
         user_text: str,
         cancel_token: CancelToken,
-        on_reasoning_token: "Callable[[str], None] | None" = None,
-        on_content_token: "Callable[[str], None] | None" = None,
+        on_reasoning_token: Callable[[str], None] | None = None,
+        on_content_token: Callable[[str], None] | None = None,
     ) -> AIReply:
         """Send *user_text* to the AI and return the reply.
 
@@ -310,7 +311,7 @@ class FreeChatSession:
                         f"{kline_table}\n\n"
                         f"---\n\n{user_text}"
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("kline_snapshot_fn failed: %s", exc)
 
         history_for_api.append({"role": "user", "content": user_content})

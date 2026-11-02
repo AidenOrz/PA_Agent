@@ -7,23 +7,24 @@ from __future__ import annotations
 
 import json
 import logging
+
 import pytest
+
 pytestmark = pytest.mark.skip(reason="Deprecated: next-bar prediction contract and settings changed")
 from unittest.mock import MagicMock
 
 import pytest
 
-from tests.fixtures.validators import schema_test_validator
 from pa_agent.ai.router import route_strategy_files
-from pa_agent.data.base import KlineFrame
 from pa_agent.orchestrator.two_stage import TwoStageOrchestrator
-from pa_agent.util.threading import CancelToken, OrchestratorEvent
+from pa_agent.util.threading import CancelToken
+from tests.fixtures.validators import schema_test_validator
 
 from .conftest import (
     VALID_STAGE1,
     VALID_STAGE2,
-    make_reply,
     make_frame,
+    make_reply,
 )
 
 _PREDICTION_BULLISH = {
@@ -238,9 +239,11 @@ def test_demo_mode_replays_legacy_record(
     frame, pending_writer, assembler, exp_reader
 ):
     """Legacy record without prediction must not crash DecisionPanel (R10.1)."""
-    from pa_agent.gui.decision_panel import DecisionPanel
-    from PyQt6.QtWidgets import QApplication
     import sys
+
+    from PyQt6.QtWidgets import QApplication
+
+    from pa_agent.gui.decision_panel import DecisionPanel
 
     app = QApplication.instance() or QApplication(sys.argv)
     panel = DecisionPanel()

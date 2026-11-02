@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-import math
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 from pa_agent.ai.prompt_assembler import PromptAssembler
-from pa_agent.data.base import KlineBar, KlineFrame, IndicatorBundle
+from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 
 
 def _make_frame(n: int = 5) -> KlineFrame:
@@ -460,7 +459,6 @@ def test_incremental_stage1_normalizes_fenced_previous_response(
     assembler: PromptAssembler,
 ) -> None:
     """Previous assistant with prose + ```json fence becomes bare diagnosis JSON."""
-    import json
 
     from pa_agent.records.schema import AnalysisRecord, RecordMeta
 
@@ -513,6 +511,7 @@ def test_incremental_stage1_raises_without_previous_messages(
 ):
     """Incremental Stage 1 raises ValueError when previous record lacks messages."""
     import pytest
+
     from pa_agent.records.schema import AnalysisRecord, RecordMeta
 
     frame = _make_frame(5)
@@ -548,6 +547,7 @@ def test_incremental_stage1_raises_without_previous_response(
 ):
     """Incremental Stage 1 raises ValueError when previous record lacks response content."""
     import pytest
+
     from pa_agent.records.schema import AnalysisRecord, RecordMeta
 
     frame = _make_frame(5)

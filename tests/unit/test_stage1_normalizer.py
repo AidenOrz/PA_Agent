@@ -1,10 +1,10 @@
 """Tests for Stage 1 JSON normalization."""
 from __future__ import annotations
 
-from tests.fixtures.validators import schema_test_validator
 from pa_agent.ai.coherence_checks import validate_stage1_coherence
 from pa_agent.ai.stage1_normalizer import normalize_stage1
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
+from tests.fixtures.validators import schema_test_validator
 from tests.integration.conftest import VALID_STAGE1
 
 

@@ -5,13 +5,11 @@ Task 12.4 — Validates: Requirements R11.4, R11.5
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
-import pytest
+from unittest.mock import MagicMock
 
 from pa_agent.orchestrator.free_chat import FreeChatSession
 from pa_agent.records.schema import AnalysisRecord, RecordMeta
 from pa_agent.util.threading import CancelToken
-
 
 # ---------------------------------------------------------------------------
 # Helpers

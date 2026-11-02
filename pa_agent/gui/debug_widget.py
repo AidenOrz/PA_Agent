@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -25,10 +24,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt
 
-from pa_agent.util.mask_secret import mask_secret
 from pa_agent.config.paths import RECORDS_PENDING_DIR
+from pa_agent.util.mask_secret import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -351,7 +349,7 @@ class DebugWidget(QWidget):
             )
             logger.info("Debug turn exported to %s", out_path)
             QMessageBox.information(self, "导出成功", f"已写入：\n{out_path}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Failed to export debug turn: %s", exc)
             QMessageBox.critical(self, "导出失败", str(exc))
 

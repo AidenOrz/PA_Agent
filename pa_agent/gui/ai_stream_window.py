@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -41,9 +41,9 @@ class _ChatWorker(QThread):
 
     def __init__(
         self,
-        session: "FreeChatSession",
+        session: FreeChatSession,
         user_text: str,
-        cancel_token: "CancelToken",
+        cancel_token: CancelToken,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -61,7 +61,7 @@ class _ChatWorker(QThread):
             )
             hit_pct = round(reply.usage.cache_hit_rate * 100, 1) if reply.usage else 0.0
             self.finished.emit(reply.content, reply.reasoning_content or "", hit_pct)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("ChatWorker error: %s", exc, exc_info=True)
             self.error.emit(str(exc))
 
@@ -71,12 +71,12 @@ class AIStreamPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._session: Optional["FreeChatSession"] = None
-        self._cancel_token: Optional["CancelToken"] = None
-        self._worker: Optional[_ChatWorker] = None
+        self._session: FreeChatSession | None = None
+        self._cancel_token: CancelToken | None = None
+        self._worker: _ChatWorker | None = None
         self._sending = False
         self._red_warned = False
-        self._settings: Optional["Settings"] = None
+        self._settings: Settings | None = None
 
         self._stage: str = ""
         self._reasoning_chars = 0
@@ -225,7 +225,7 @@ class AIStreamPanel(QWidget):
         row.addLayout(button_col)
         return box
 
-    def bind_settings(self, settings: Optional["Settings"]) -> None:
+    def bind_settings(self, settings: Settings | None) -> None:
         self._settings = settings
         self._apply_stream_font()
         self._refresh_mode_label()
@@ -483,8 +483,8 @@ class AIStreamPanel(QWidget):
 
     def set_session(
         self,
-        session: "FreeChatSession",
-        cancel_token: "CancelToken",
+        session: FreeChatSession,
+        cancel_token: CancelToken,
     ) -> None:
         self._session = session
         self._cancel_token = cancel_token

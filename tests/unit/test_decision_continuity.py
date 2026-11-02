@@ -11,7 +11,7 @@ from pa_agent.ai.decision_continuity import (
     order_direction_sign,
     render_continuity_prompt_block,
 )
-from pa_agent.data.base import KlineBar, KlineFrame, IndicatorBundle
+from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 
 
 def _frame(*, close: float = 4193.0, high: float = 4194.0, low: float = 4190.0) -> KlineFrame:

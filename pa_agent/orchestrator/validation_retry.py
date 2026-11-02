@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from pa_agent.ai.json_validator import Ok, ValidationError, coalesce_model_json_text
 from pa_agent.ai.retry_feedback import build_retry_feedback, parse_previous_for_cheat
@@ -235,7 +236,7 @@ def validate_with_retry(
         ]
         try:
             current_reply = call_api(current_messages)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # Preserve the feedback turn and the last valid API reply.  The
             # orchestrator owns partial persistence and will classify the
             # underlying exception as network/API/cancelled there.

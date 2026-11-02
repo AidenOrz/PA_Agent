@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from pa_agent.config.settings import Settings, load_settings, save_settings
 

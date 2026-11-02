@@ -2,13 +2,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 from pa_agent.records.pending_writer import PendingWriter
 from pa_agent.util.mask_secret import mask_secret
-
 
 # ---------------------------------------------------------------------------
 # _sanitize static method

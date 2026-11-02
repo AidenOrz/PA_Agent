@@ -12,10 +12,9 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtCore import QRectF  # noqa: E402
+from PyQt6.QtCore import QRectF
 
-from pa_agent.gui import decision_flow_viz as viz  # noqa: E402
-
+from pa_agent.gui import decision_flow_viz as viz
 
 _TRACE = dict(
     gate_trace=[

@@ -108,6 +108,6 @@ class AnalysisPrepWorker(QThread):
                     incremental_detail=incremental_detail,
                 )
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("Analysis prep failed: %s", exc)
             self.failed.emit(str(exc))

@@ -5,14 +5,16 @@ Covers correctness properties P1–P7 from design.md.
 from __future__ import annotations
 
 import copy
-from hypothesis import given, settings as h_settings, assume
-from hypothesis import strategies as st
+
 import pytest
+from hypothesis import given
+from hypothesis import settings as h_settings
+from hypothesis import strategies as st
+
 pytestmark = pytest.mark.skip(reason="Deprecated: next-bar prediction normalization contract changed")
 
 from pa_agent.ai.json_validator import JsonValidator
 from pa_agent.ai.stage2_normalizer import _normalize_next_bar_prediction
-
 
 # ── Strategies ────────────────────────────────────────────────────────────────
 

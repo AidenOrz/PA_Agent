@@ -30,7 +30,7 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
             proxy_override = str(
                 getattr(settings.general, "tradingview_proxy", "") or ""
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug("could not load settings for TV proxy override", exc_info=True)
 
         src = TradingViewSource(proxy_override=proxy_override)
@@ -59,7 +59,7 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
             "TradingView connectivity probe: tvDatafeed not installed: %s", exc
         )
         return False, str(exc), False
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("TradingView connectivity probe failed: %s", exc)
         return False, str(exc), True
     finally:

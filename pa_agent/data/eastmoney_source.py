@@ -30,9 +30,6 @@ from pa_agent.data.ashare_common import (
     index_symbol_for_api as _index_symbol_for_api,
 )
 from pa_agent.data.ashare_common import (
-    merge_ohlcv as _merge_ohlcv,
-)
-from pa_agent.data.ashare_common import (
     resample_rows_to_4h as _resample_rows_to_4h,
 )
 from pa_agent.data.ashare_common import (
@@ -229,9 +226,7 @@ class EastMoneySource(DataSource):
                 session_volume_lots=float(book.volume) if book else 0.0,
                 session_amount=float(book.amount) if book else 0.0,
             )
-        if self._timeframe == "1d" and _ashare_trading_day():
-            self._apply_spot_to_forming(rows_asc)
-        elif _ashare_session_open():
+        if (self._timeframe == "1d" and _ashare_trading_day()) or _ashare_session_open():
             self._apply_spot_to_forming(rows_asc)
 
         rows_newest = list(reversed(rows_asc[-fetch_n:]))

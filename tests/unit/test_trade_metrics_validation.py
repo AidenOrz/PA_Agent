@@ -10,7 +10,6 @@ from pa_agent.util.trade_metrics import (
     passes_trader_equation,
     validate_order_trade_metrics,
 )
-
 from tests.fixtures.validators import schema_test_validator
 
 validator = schema_test_validator()
