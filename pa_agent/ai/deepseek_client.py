@@ -1,7 +1,9 @@
 """DeepSeek AI client (OpenAI-compatible API)."""
 from __future__ import annotations
 
+import contextlib
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, TYPE_CHECKING
@@ -32,6 +34,139 @@ else:
 logger = logging.getLogger(__name__)
 
 _MIMO_REASONING_CACHE = ReasoningCache()
+
+
+# ── 共享 SDK 客户端缓存 ────────────────────────────────────────────────────────
+# 每次 chat()/stream_chat() 新建 OpenAI 客户端会连带新建 httpx 连接池与线程池，
+# 且从不 close()，长期运行会持续堆积连接与线程。这里按
+# (客户端类, base_url, api_key, timeout) 缓存复用，并用引用计数保证：
+# 切换 key/路由或对象析构时，旧实例在「没有持有者且没有在途请求」后才真正关闭。
+
+_CLIENT_LOCK = threading.RLock()
+_CLIENT_CACHE: dict[tuple[Any, str, str, float], _SharedClient] = {}
+
+
+class _SharedClient:
+    """一个可被多个 DeepSeekClient 共用的 OpenAI 客户端。"""
+
+    __slots__ = ("client", "in_use", "owners", "retired")
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+        self.owners = 0       # 持有它的 DeepSeekClient 数量（引用计数）
+        self.in_use = 0       # 正在执行的 API 请求数
+        self.retired = False  # 已退役：最后一个在途请求结束后关闭
+
+
+def _close_client_quietly(client: Any) -> None:
+    """Close an SDK client; never raise from cleanup paths."""
+    close = getattr(client, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception as exc:
+        logger.debug("OpenAI client close failed: %s", exc)
+
+
+def _openai_cache_key(
+    settings: AIProviderSettings,
+    timeout_s: float,
+) -> tuple[Any, str, str, float]:
+    """Cache identity: SDK class + route + key + timeout.
+
+    SDK 类参与 key，测试里 patch `_OpenAI` 时不会串用上一个 mock 实例。
+    """
+    return (
+        _OpenAI,
+        str(getattr(settings, "base_url", "") or ""),
+        str(getattr(settings, "api_key", "") or ""),
+        float(timeout_s),
+    )
+
+
+def _acquire_shared_client(
+    settings: AIProviderSettings,
+    timeout_s: float,
+) -> tuple[tuple[Any, str, str, float], _SharedClient]:
+    """Return the cached client for this route, creating it on first use."""
+    if _OpenAI is None:
+        raise RuntimeError("openai package is not installed") from _OPENAI_IMPORT_ERROR
+    key = _openai_cache_key(settings, timeout_s)
+    with _CLIENT_LOCK:
+        shared = _CLIENT_CACHE.get(key)
+        if shared is None or shared.retired:
+            client = _OpenAI(
+                base_url=settings.base_url,
+                api_key=settings.api_key,
+                timeout=timeout_s,
+            )
+            shared = _SharedClient(client)
+            _CLIENT_CACHE[key] = shared
+            logger.debug(
+                "OpenAI client created: base_url=%s timeout=%.0fs",
+                settings.base_url,
+                timeout_s,
+            )
+        shared.owners += 1
+        return key, shared
+
+
+def _release_shared_client(
+    key: tuple[Any, str, str, float] | None,
+    shared: _SharedClient | None,
+) -> None:
+    """Drop one owner; close the client once nothing references it."""
+    if key is None or shared is None:
+        return
+    with _CLIENT_LOCK:
+        shared.owners = max(0, shared.owners - 1)
+        if shared.owners > 0:
+            return
+        if _CLIENT_CACHE.get(key) is shared:
+            _CLIENT_CACHE.pop(key, None)
+        shared.retired = True
+        close_now = shared.in_use == 0
+    if close_now:
+        _close_client_quietly(shared.client)
+
+
+class _ClientLease:
+    """一次 API 调用对共享客户端的占用标记。
+
+    存在在途请求时，退役的客户端延迟到最后一个请求结束再关闭，
+    避免并发请求（GUI 线程 + 后台 worker）被中途掐断。
+    """
+
+    __slots__ = ("_released", "_shared", "client")
+
+    def __init__(self, shared: _SharedClient) -> None:
+        self._shared = shared
+        self.client = shared.client
+        self._released = False
+        with _CLIENT_LOCK:
+            shared.in_use += 1
+
+    def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        with _CLIENT_LOCK:
+            self._shared.in_use = max(0, self._shared.in_use - 1)
+            close_now = self._shared.retired and self._shared.in_use == 0
+        if close_now:
+            _close_client_quietly(self.client)
+
+
+def _reset_openai_client_cache() -> None:
+    """Close and forget every cached client (tests / shutdown)."""
+    with _CLIENT_LOCK:
+        entries = list(_CLIENT_CACHE.values())
+        _CLIENT_CACHE.clear()
+    for shared in entries:
+        shared.retired = True
+        if shared.in_use == 0:
+            _close_client_quietly(shared.client)
 
 
 @dataclass
@@ -472,10 +607,53 @@ class DeepSeekClient:
     def __init__(self, settings: AIProviderSettings, logger_: logging.Logger | None = None) -> None:
         self._settings = settings
         self._log = logger_ or logger
+        self._lock = threading.RLock()
+        self._client_key: tuple[Any, str, str, float] | None = None
+        self._client_shared: _SharedClient | None = None
 
     def update_provider(self, settings: AIProviderSettings) -> None:
         """Replace in-memory provider settings (e.g. after QClaw auto-fallback)."""
         self._settings = settings
+        # 路由/key 可能已变：立刻放手旧客户端，下次调用按新的
+        # (base_url, api_key, timeout) 重新取用。
+        self.release()
+
+    def release(self) -> None:
+        """Drop this instance's hold on the shared SDK client.
+
+        只有共享客户端已无其它持有者、且没有在途请求时才真正 close()。
+        释放后仍可继续调用 chat()/stream_chat()——会自动重新获取。
+        """
+        with self._lock:
+            key, shared = self._client_key, self._client_shared
+            self._client_key = None
+            self._client_shared = None
+            if shared is not None:
+                _release_shared_client(key, shared)
+
+    def __del__(self) -> None:
+        # 析构路径不能抛异常；释放逻辑本身也不应失败，这里兜底。
+        with contextlib.suppress(Exception):
+            self.release()
+
+    def _acquire_client(self, timeout_s: float) -> _ClientLease:
+        """Lease the cached SDK client for the current (route, api_key, timeout)."""
+        with self._lock:
+            current_key = _openai_cache_key(self._settings, timeout_s)
+            shared = self._client_shared
+            if (
+                shared is not None
+                and self._client_key == current_key
+                and not shared.retired
+            ):
+                return _ClientLease(shared)
+            old_key, old_shared = self._client_key, self._client_shared
+            key, shared = _acquire_shared_client(self._settings, timeout_s)
+            self._client_key = key
+            self._client_shared = shared
+            if old_shared is not None:
+                _release_shared_client(old_key, old_shared)
+            return _ClientLease(shared)
 
     def chat(
         self,
@@ -524,10 +702,7 @@ class DeepSeekClient:
         if _OpenAI is None:
             raise RuntimeError("openai package is not installed") from _OPENAI_IMPORT_ERROR
 
-        client = _OpenAI(
-            base_url=self._settings.base_url,
-            api_key=self._settings.api_key,
-        )
+        lease = self._acquire_client(timeout_s)
 
         t0 = time.monotonic()
         create_kwargs: dict[str, Any] = {
@@ -545,8 +720,9 @@ class DeepSeekClient:
         # temperature (DeepSeek/Anthropic spec), so we only inject it when safe.
         if not _thinking_on:
             create_kwargs["temperature"] = 0
+        # 租约只覆盖这一次 HTTP 往返；用完（含异常/取消）立即归还。
         try:
-            response = client.chat.completions.create(
+            response = lease.client.chat.completions.create(
                 **create_kwargs,
                 # IMPORTANT: do NOT add temperature, top_p, presence_penalty,
                 # frequency_penalty — they are incompatible with thinking mode.
@@ -555,6 +731,8 @@ class DeepSeekClient:
             latency_ms = (time.monotonic() - t0) * 1000
             self._log.error("DeepSeekClient API error after %.0f ms: %s", latency_ms, exc)
             raise
+        finally:
+            lease.release()
 
         latency_ms = (time.monotonic() - t0) * 1000
 
@@ -690,10 +868,7 @@ class DeepSeekClient:
         if _OpenAI is None:
             raise RuntimeError("openai package is not installed") from _OPENAI_IMPORT_ERROR
 
-        client = _OpenAI(
-            base_url=self._settings.base_url,
-            api_key=self._settings.api_key,
-        )
+        lease = self._acquire_client(timeout_s)
 
         t0 = time.monotonic()
         reasoning_content = ""
@@ -723,7 +898,7 @@ class DeepSeekClient:
                 stream_kwargs["reasoning_effort"] = _effort
 
             try:
-                stream = client.chat.completions.create(**stream_kwargs)
+                stream = lease.client.chat.completions.create(**stream_kwargs)
             except Exception as exc:
                 if not _is_stream_options_unsupported_error(exc):
                     raise
@@ -733,7 +908,7 @@ class DeepSeekClient:
                     "stream_options not supported; retrying without it: %s", exc
                 )
                 stream_kwargs.pop("stream_options", None)
-                stream = client.chat.completions.create(**stream_kwargs)
+                stream = lease.client.chat.completions.create(**stream_kwargs)
 
             for chunk in stream:
                 # Check cancellation on each chunk
@@ -814,6 +989,9 @@ class DeepSeekClient:
             latency_ms = (time.monotonic() - t0) * 1000
             self._log.error("DeepSeekClient stream error after %.0f ms: %s", latency_ms, exc)
             raise
+        finally:
+            # 整个流读完后才归还租约：客户端关闭期间不能再有在途响应。
+            lease.release()
 
         latency_ms = (time.monotonic() - t0) * 1000
 

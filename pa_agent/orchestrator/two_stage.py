@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 from pa_agent.ai.json_validator import Ok, ValidationError
 from pa_agent.orchestrator.validation_retry import (
+    StageName,
     ValidationRetryError,
     validate_with_retry,
 )
@@ -95,8 +96,33 @@ def _json_truncation_hint(content: str, err: ValidationError) -> str | None:
     return None
 
 
-def _enrich_stage2_validation_message(err: ValidationError, reply: Any) -> str:
-    """Add actionable context for empty content or truncated JSON."""
+# 各阶段特有的收尾提示：(思考被截断时的归因/建议, 阶段中文名)。
+# 其余判定逻辑完全一致，抽在 _enrich_validation_message 里共用。
+_STAGE_ENRICH_HINTS: dict[str, tuple[str, str]] = {
+    "stage1": (
+        " 常见原因是思考占满输出额度后被截断。"
+        " 请缩短 prompt、检查网关输出上限，或调整 Reasoning Effort 后重新分析。",
+        "阶段一",
+    ),
+    "stage2": (
+        " 常见原因是思考在输出阶段二 JSON 前被截断或网关提前结束流。"
+        " 请缩短 prompt、检查 Packy 分组限额，或调整模型/Reasoning Effort 后重新分析。",
+        "阶段二",
+    ),
+}
+
+
+def _enrich_validation_message(
+    err: ValidationError,
+    reply: Any,
+    *,
+    stage: StageName,
+) -> str:
+    """Add actionable context for empty content or truncated JSON.
+
+    Stage 1 与 Stage 2 只在收尾的提示文案上不同（见 _STAGE_ENRICH_HINTS），
+    判定顺序与返回格式必须保持一致。
+    """
     from pa_agent.ai.provider_errors import (
         PROVIDER_QUOTA_USER_MESSAGE,
         is_provider_quota_exhausted,
@@ -124,63 +150,29 @@ def _enrich_stage2_validation_message(err: ValidationError, reply: Any) -> str:
     reasoning = getattr(reply, "reasoning_content", None) or ""
     usage = getattr(reply, "usage", None)
     completion = getattr(usage, "completion_tokens", 0) if usage else 0
+    reasoning_hint, stage_zh = _STAGE_ENRICH_HINTS[stage]
     if reasoning and "{" not in reasoning:
         return (
             f"{err.message}：扩展思考已输出约 {len(reasoning)} 字，但正文 content 为空，"
             f"且思考中未见 JSON（completion_tokens≈{completion}）。"
-            " 常见原因是思考在输出阶段二 JSON 前被截断或网关提前结束流。"
-            " 请缩短 prompt、检查 Packy 分组限额，或调整模型/Reasoning Effort 后重新分析。"
+            f"{reasoning_hint}"
         )
     if reasoning:
         return (
-            f"{err.message}：正文 content 为空；请把阶段二 JSON 写在 content 正文，"
+            f"{err.message}：正文 content 为空；请把{stage_zh} JSON 写在 content 正文，"
             "不要只写在思考区。"
         )
     return f"{err.message}。{detail}" if detail else err.message
+
+
+def _enrich_stage2_validation_message(err: ValidationError, reply: Any) -> str:
+    """Add actionable context for empty content or truncated JSON."""
+    return _enrich_validation_message(err, reply, stage="stage2")
 
 
 def _enrich_stage1_validation_message(err: ValidationError, reply: Any) -> str:
     """Add actionable context for empty content or truncated JSON."""
-    from pa_agent.ai.provider_errors import (
-        PROVIDER_QUOTA_USER_MESSAGE,
-        is_provider_quota_exhausted,
-    )
-
-    if err.category == "e" or is_provider_quota_exhausted(err.raw_text):
-        return err.message or PROVIDER_QUOTA_USER_MESSAGE
-    from pa_agent.ai.validation_messages import format_validation_errors
-
-    detail = format_validation_errors(
-        err.invalid_fields, missing_fields=err.missing_fields
-    )
-    content = (getattr(reply, "content", None) or "").strip()
-    trunc = _json_truncation_hint(content, err)
-    if trunc:
-        usage = getattr(reply, "usage", None)
-        completion = getattr(usage, "completion_tokens", 0) if usage else 0
-        reasoning_len = len(getattr(reply, "reasoning_content", None) or "")
-        msg = f"{err.message}。{trunc} completion_tokens≈{completion}，思考区约 {reasoning_len} 字。"
-        return f"{msg}。{detail}" if detail else msg
-    if err.category != "d" or (err.raw_text or "").strip():
-        return f"{err.message}。{detail}" if detail else err.message
-    if content:
-        return f"{err.message}。{detail}" if detail else err.message
-    reasoning = getattr(reply, "reasoning_content", None) or ""
-    usage = getattr(reply, "usage", None)
-    completion = getattr(usage, "completion_tokens", 0) if usage else 0
-    if reasoning and "{" not in reasoning:
-        return (
-            f"{err.message}：扩展思考已输出约 {len(reasoning)} 字，但正文 content 为空，"
-            f"且思考中未见 JSON（completion_tokens≈{completion}）。"
-            " 常见原因是思考占满输出额度后被截断。"
-            " 请缩短 prompt、检查网关输出上限，或调整 Reasoning Effort 后重新分析。"
-        )
-    if reasoning:
-        return (
-            f"{err.message}：正文 content 为空；请把阶段一 JSON 写在 content 正文，"
-            "不要只写在思考区。"
-        )
-    return f"{err.message}。{detail}" if detail else err.message
+    return _enrich_validation_message(err, reply, stage="stage1")
 
 
 def _emit_buffered_stream(

@@ -7,7 +7,11 @@ from typing import Any, Callable, Literal
 
 from pa_agent.ai.json_validator import Ok, ValidationError, coalesce_model_json_text
 from pa_agent.ai.retry_feedback import build_retry_feedback, parse_previous_for_cheat
-from pa_agent.ai.retry_policy import detect_cheat, should_retry
+from pa_agent.ai.retry_policy import (
+    detect_cheat,
+    extract_feedback_targets,
+    should_retry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +106,8 @@ def validate_with_retry(
     if not getattr(validation_settings, "retry_enabled", True):
         max_attempts = 0
     if stage == "stage2" and not getattr(validation_settings, "retry_stage2", True):
+        # 关闭阶段二重试：上限压到 0，并在主循环里用 max_attempts 兜底拦截，
+        # 不能只改本地变量——should_retry 只读 retry_max，否则配置形同虚设。
         max_attempts = 0
 
     current_messages = list(messages)
@@ -109,6 +115,8 @@ def validate_with_retry(
     attempt = 0
     previous_raw: str | None = None
     previous_obj: dict[str, Any] | None = None
+    # 重试反馈点名要求修改的字段：这些不可变字段的变更属合法修正，不算篡改。
+    feedback_targets: set[str] = set()
 
     while True:
         content = coalesce_model_json_text(
@@ -124,7 +132,12 @@ def validate_with_retry(
                     previous_obj,
                     **validate_kwargs,
                 )
-                cheats = detect_cheat(stage, before_norm, result.obj)
+                cheats = detect_cheat(
+                    stage,
+                    before_norm,
+                    result.obj,
+                    feedback_mentioned=feedback_targets,
+                )
                 if cheats:
                     logger.warning(
                         "%s retry cheat detected after attempt %d: %s",
@@ -157,7 +170,9 @@ def validate_with_retry(
             )
 
         err = result
-        if not should_retry(
+        # max_attempts 是最终上限（retry_enabled / retry_stage2 都会把它压到 0），
+        # 先判上限再问策略，保证「关掉阶段二重试」真正生效。
+        if attempt >= max_attempts or not should_retry(
             err.category,
             err.invalid_fields,
             err.missing_fields,
@@ -182,6 +197,10 @@ def validate_with_retry(
 
         previous_raw = content
         previous_obj = parse_previous_for_cheat(previous_raw)
+        # 累加本轮反馈要求修正的字段，供下一轮 cheat 检测豁免使用。
+        feedback_targets |= extract_feedback_targets(
+            err.invalid_fields, err.missing_fields
+        )
 
         feedback = build_retry_feedback(
             err,

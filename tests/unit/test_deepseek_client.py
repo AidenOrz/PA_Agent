@@ -461,3 +461,123 @@ def test_mimo_chat_patches_tool_call_messages_before_send() -> None:
 
     sent_messages = mock_openai.return_value.chat.completions.create.call_args.kwargs["messages"]
     assert sent_messages[1]["reasoning_content"] == ""
+
+# ── 共享 OpenAI 客户端复用 / 关闭 ─────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clear_shared_clients():
+    """每个用例前后清空共享客户端缓存，避免 mock 实例跨用例串用。"""
+    from pa_agent.ai.deepseek_client import _reset_openai_client_cache
+
+    _reset_openai_client_cache()
+    yield
+    _reset_openai_client_cache()
+
+
+def _install_fake_openai(monkeypatch, response=None):
+    """把 _OpenAI 换成本地工厂，记录创建与关闭情况（完全离线）。"""
+    created: list = []
+
+    class _FakeClient:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+            self.closed = False
+            self.chat = MagicMock()
+            self.chat.completions.create.return_value = response or _make_mock_response()
+
+        def close(self) -> None:
+            self.closed = True
+
+    def _factory(**kwargs):
+        fake = _FakeClient(**kwargs)
+        created.append(fake)
+        return fake
+
+    monkeypatch.setattr("pa_agent.ai.deepseek_client._OpenAI", _factory)
+    return created
+
+
+def test_chat_and_stream_reuse_one_openai_client(monkeypatch):
+    """同一 (base_url, api_key, timeout) 的多次调用只创建一个 SDK 客户端。"""
+    created = _install_fake_openai(monkeypatch)
+    client = DeepSeekClient(_make_settings())
+
+    client.chat([{"role": "user", "content": "hi"}])
+    client.chat([{"role": "user", "content": "hi again"}])
+
+    assert len(created) == 1
+    assert created[0].kwargs["timeout"] == 600.0
+
+
+def test_client_cache_key_separates_api_key_and_timeout(monkeypatch):
+    """切换 key 或 timeout 会使用各自的客户端，不会串用连接池。"""
+    created = _install_fake_openai(monkeypatch)
+    client = DeepSeekClient(_make_settings(api_key="sk-key-a"))
+
+    client.chat([{"role": "user", "content": "hi"}])
+    client.chat([{"role": "user", "content": "hi"}], timeout_s=30.0)
+    client._settings = _make_settings(api_key="sk-key-b")
+    client.chat([{"role": "user", "content": "hi"}])
+
+    assert len(created) == 3
+
+
+def test_update_provider_closes_previous_client(monkeypatch):
+    """update_provider 切换 provider 后旧客户端必须 close()。"""
+    created = _install_fake_openai(monkeypatch)
+    client = DeepSeekClient(_make_settings(api_key="sk-old"))
+
+    client.chat([{"role": "user", "content": "hi"}])
+    client.update_provider(_make_settings(api_key="sk-new"))
+    client.chat([{"role": "user", "content": "hi"}])
+
+    assert len(created) == 2
+    assert created[0].closed is True, "旧 SDK 客户端未关闭，连接池会泄漏"
+    assert created[1].closed is False
+
+
+def test_release_closes_client_when_no_other_owner(monkeypatch):
+    """release() 在没有其它持有者时立即关闭客户端。"""
+    created = _install_fake_openai(monkeypatch)
+    client = DeepSeekClient(_make_settings())
+
+    client.chat([{"role": "user", "content": "hi"}])
+    client.release()
+
+    assert created[0].closed is True
+    # 释放后仍可继续使用：会重新获取客户端。
+    client.chat([{"role": "user", "content": "hi"}])
+    assert len(created) == 2
+
+
+def test_shared_client_keeps_alive_while_another_owner_uses_it(monkeypatch):
+    """两个 DeepSeekClient 共用同一客户端时，先释放的一方不能把它关掉。"""
+    created = _install_fake_openai(monkeypatch)
+    first = DeepSeekClient(_make_settings())
+    second = DeepSeekClient(_make_settings())
+
+    first.chat([{"role": "user", "content": "hi"}])
+    second.chat([{"role": "user", "content": "hi"}])
+    assert len(created) == 1
+
+    first.release()
+    assert created[0].closed is False
+
+    second.release()
+    assert created[0].closed is True
+
+
+def test_in_flight_request_defers_client_close(monkeypatch):
+    """有在途请求时，退役的客户端延迟到请求结束再关闭（并发安全）。"""
+    created = _install_fake_openai(monkeypatch)
+    client = DeepSeekClient(_make_settings())
+
+    client.chat([{"role": "user", "content": "hi"}])
+    lease = client._acquire_client(600.0)
+
+    client.release()
+    assert created[0].closed is False, "在途请求期间不应关闭客户端"
+
+    lease.release()
+    assert created[0].closed is True
