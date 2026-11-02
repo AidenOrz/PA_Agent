@@ -13,7 +13,9 @@ from pa_agent.ai.json_validator import (
     _strip_fences,
 )
 
-_SAMPLE = Path(__file__).resolve().parents[2] / "tools" / "stage2_raw_sample.txt"
+# 夹具必须放在 tests/ 下并被跟踪：原来指向 tools/stage2_raw_sample.txt，
+# 而该文件被 .gitignore 忽略，CI 检出后不存在 → 本地绿、CI 红。
+_SAMPLE = Path(__file__).resolve().parents[1] / "fixtures" / "stage2_raw_sample.txt"
 from tests.fixtures.validators import schema_test_validator
 
 _validator = schema_test_validator()
