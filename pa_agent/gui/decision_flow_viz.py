@@ -70,7 +70,10 @@ _LEVEL_DY = 270
 _BRANCH_DX = 360
 _PLAY_TICK_MS = 40
 _FX_TICK_MS = 60
-_ANIM_PHASE = 0.0
+#: 每次 _FX_TICK_MS 推进的相位量（相位是每个视图实例各自持有的）。
+_FX_PHASE_STEP = 0.06
+#: 背景扫描光带的高度（场景坐标），用于把重绘限制在该带状区域内。
+_SCAN_BAND_H = 68.0
 
 _NEON_CYAN = "#37f8ff"
 _NEON_BLUE = "#58a6ff"
@@ -134,8 +137,44 @@ class _Placed:
 
 
 class _FlowScene(QGraphicsScene):
+    """Scene that owns its own animation phase (one per view instance).
+
+    相位以前是模块级全局变量：全屏副本会起第二个定时器，两边各自递增同一份
+    相位，于是动画速度随窗口数翻倍，且每个定时器都触发整场景重绘，CPU 常驻。
+    现在相位由 scene（即每个 DecisionFlowVizPanel）自己持有。
+    """
+
+    def __init__(self, parent: QGraphicsScene | None = None) -> None:
+        super().__init__(parent)
+        self._phase = 0.0
+
+    @property
+    def anim_phase(self) -> float:
+        """当前动画相位（各视图独立；隐藏时不再递增）。"""
+        return self._phase
+
+    def advance_phase(self, step: float = _FX_PHASE_STEP) -> float:
+        """推进相位并返回新值（只由本视图的定时器调用）。"""
+        self._phase = (self._phase + step) % 1000.0
+        return self._phase
+
+    def scan_band(self) -> QRectF | None:
+        """扫描光带当前所占的场景矩形（无场景矩形时返回 None）。
+
+        定时器只重绘这个窄条，而不是整场景：省掉每次 60ms 的全量重绘。
+        """
+        rect = self.sceneRect()
+        if rect.isEmpty():
+            return None
+        scan_y = rect.top() + (rect.height() + 220) * ((self._phase * 0.18) % 1.0) - 110
+        return QRectF(
+            rect.left(),
+            scan_y - _SCAN_BAND_H / 2,
+            rect.width(),
+            _SCAN_BAND_H,
+        )
+
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
-        global _ANIM_PHASE
         grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
         grad.setColorAt(0, QColor("#020711"))
         grad.setColorAt(0.48, QColor("#07111f"))
@@ -180,7 +219,7 @@ class _FlowScene(QGraphicsScene):
             painter.drawLine(int(rect.left()), int(y), int(rect.right()), int(y))
             y += major
 
-        scan_y = rect.top() + ((rect.height() + 220) * ((_ANIM_PHASE * 0.18) % 1.0)) - 110
+        scan_y = rect.top() + ((rect.height() + 220) * ((self._phase * 0.18) % 1.0)) - 110
         scan = QLinearGradient(rect.left(), scan_y - 34, rect.left(), scan_y + 34)
         transparent = QColor(_NEON_CYAN)
         transparent.setAlpha(0)
@@ -208,13 +247,28 @@ class _BranchEdge(QGraphicsObject):
         self._p1 = p1
         self._label = label
         self._active = active
+        self._phase = 0.0  # 仅在脱离 scene 独立使用时作为兜底
         self.setZValue(1)
 
     def boundingRect(self) -> QRectF:  # noqa: N802
         return QRectF(self._p0, self._p1).normalized().adjusted(-40, -24, 40, 24)
 
+    def is_active(self) -> bool:
+        """是否为 AI 实际走过的分支（只有它上面有流动光点）。"""
+        return bool(self._active)
+
+    def phase(self, scene_phase: float | None = None) -> float:
+        """相位来源：优先用 scene 的实例相位，独立使用时退回本地相位。"""
+        if scene_phase is not None:
+            return float(scene_phase)
+        scene = self.scene()
+        getter = getattr(scene, "anim_phase", None)
+        if isinstance(getter, int | float):
+            return float(getter)
+        return self._phase
+
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
-        global _ANIM_PHASE
+        phase = self.phase()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         col = QColor(_NEON_CYAN if self._active else T.TEXT_MUTED)
         if not self._active:
@@ -236,7 +290,7 @@ class _BranchEdge(QGraphicsObject):
         if self._active:
             painter.setPen(Qt.PenStyle.NoPen)
             for i in range(3):
-                pct = (_ANIM_PHASE * 0.42 + i * 0.33) % 1.0
+                pct = (phase * 0.42 + i * 0.33) % 1.0
                 pt = path.pointAtPercent(pct)
                 dot = QColor(_NEON_CYAN)
                 dot.setAlpha(210 - i * 45)
@@ -583,15 +637,20 @@ class _TerminalNode(QGraphicsObject):
         self._color = QColor(_OUTCOME_COLOR.get(self._outcome, T.ACCENT_PRIMARY))
         self.setToolTip(f"§{self._nid} · {self._outcome_zh}\n{self._label}")
 
+    def _anim_phase(self) -> float:
+        """取所属 scene 的实例相位（各视图互不影响）。"""
+        scene = self.scene()
+        value = getattr(scene, "anim_phase", 0.0) if scene is not None else 0.0
+        return float(value) if isinstance(value, int | float) else 0.0
+
     def boundingRect(self) -> QRectF:  # noqa: N802
         return QRectF(-_TERMINAL_W / 2 - 8, -8, _TERMINAL_W + 16, _TERMINAL_H + 16)
 
     def paint(self, painter: QPainter, _option: Any, _widget: Any = None) -> None:
-        global _ANIM_PHASE
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = _TERMINAL_W, _TERMINAL_H
         rect = QRectF(-w / 2, 0, w, h)
-        pulse = int(70 + 35 * (0.5 + 0.5 * math.sin(_ANIM_PHASE * 2.7)))
+        pulse = int(70 + 35 * (0.5 + 0.5 * math.sin(self._anim_phase() * 2.7)))
         glow = QPen(QColor(self._color.red(), self._color.green(), self._color.blue(), pulse))
         glow.setWidth(16)
         painter.setPen(glow)
@@ -798,11 +857,13 @@ class DecisionFlowVizPanel(QWidget):
         self._settings: Any = None
         self._show_controls = show_controls
         self._last_trace_kw: dict[str, Any] | None = None
+        self._window_closing = False
         self._play_timer = QTimer(self)
         self._play_timer.timeout.connect(self._on_play_tick)
+        # 每个视图实例各自一份定时器 + 相位（相位存在 self._scene 里）。
+        # 这里不直接 start：等 showEvent 看得到真实可见性再启动。
         self._fx_timer = QTimer(self)
         self._fx_timer.timeout.connect(self._on_fx_tick)
-        self._fx_timer.start(_FX_TICK_MS)
         self._play_points: list[QPointF] = []
         self._play_index = 0
         self._play_active = False
@@ -910,6 +971,10 @@ class DecisionFlowVizPanel(QWidget):
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        if self._window_closing:
+            return
+        # 只有可见时才跑动画定时器。
+        self._sync_fx_timer()
         self.schedule_refit_view()
 
     def should_auto_play_after_load(self) -> bool:
@@ -922,9 +987,71 @@ class DecisionFlowVizPanel(QWidget):
         return bool(getattr(self._settings.general, "decision_flow_auto_play", False))
 
     def _on_fx_tick(self) -> None:
-        global _ANIM_PHASE
-        _ANIM_PHASE = (_ANIM_PHASE + 0.06) % 1000.0
-        self._scene.update(self._scene.sceneRect())
+        """推进本视图自己的相位，只重绘真正在动的窄条区域。
+
+        旧实现是模块级全局相位 + update(sceneRect()) 全场景重绘：每个视图一份
+        定时器，动画速度随窗口数翻倍、CPU 常驻。现在相位属于本视图的 scene，
+        重绘区域限制在扫描光带（外加终结节点的呼吸描边）。
+        """
+        if not self._fx_timer.isActive():
+            # 隐藏/销毁后的残留 tick 不再动场景。
+            return
+        self._scene.advance_phase(_FX_PHASE_STEP)
+        band = self._scene.scan_band()
+        if band is not None:
+            self._scene.update(band)
+        for item in self._fx_pulse_items():
+            item.update()
+
+    def _fx_pulse_items(self) -> list[QGraphicsObject]:
+        """每帧真正会变的 item：终结节点的呼吸光晕 + 有流动光点的活动分支。
+
+        这些 item 的重绘交给各自 item.update()，不会再触发整场景重绘。
+        """
+        return [
+            item
+            for item in self._scene.items()
+            if isinstance(item, _TerminalNode)
+            or (isinstance(item, _BranchEdge) and item.is_active())
+        ]
+
+    def _sync_fx_timer(self) -> None:
+        """按可见性启停动画定时器（隐藏/关闭时不跑，避免 CPU 常驻）。"""
+        should_run = (
+            self.isVisible()
+            and not self._window_closing
+            and self._fx_animation_wanted()
+        )
+        if should_run:
+            if not self._fx_timer.isActive():
+                self._fx_timer.start(_FX_TICK_MS)
+        elif self._fx_timer.isActive():
+            self._fx_timer.stop()
+
+    def _fx_animation_wanted(self) -> bool:
+        """场景里有需要动画的 item 才跑定时器（空场景不烧 CPU）。"""
+        return any(
+            isinstance(item, _TerminalNode | _BranchEdge)
+            for item in self._scene.items()
+        )
+
+    def hideEvent(self, event: Any) -> None:
+        """隐藏时停掉动画定时器。"""
+        self._fx_timer.stop()
+        super().hideEvent(event)
+
+    def closeEvent(self, event: Any) -> None:
+        """关闭时停掉动画定时器，避免回调打到正在销毁的场景。"""
+        self._window_closing = True
+        self._fx_timer.stop()
+        super().closeEvent(event)
+
+    def shutdown(self) -> None:
+        """显式停掉所有定时器（供父窗口关闭时调用）。"""
+        self._window_closing = True
+        self._fx_timer.stop()
+        self._play_timer.stop()
+        self._refit_timer.stop()
 
     def play_path(self) -> bool:
         """Play camera animation along the current AI path."""
@@ -1078,7 +1205,11 @@ class DecisionFlowVizPanel(QWidget):
         layout.addWidget(panel)
         dlg.showMaximized()
         QTimer.singleShot(180, panel.play_path)
+        # 副本有自己的定时器与相位；对话框关闭时务必停掉，否则它会在后台
+        # 继续以 60ms 的节奏重绘，CPU 常驻、动画相位也不再与主视图同步。
+        dlg.finished.connect(lambda _result=0: panel.shutdown())
         dlg.exec()
+        panel.shutdown()
 
     def refit_view(self) -> None:
         """Re-apply default zoom (e.g. after user changes decision_flow_default_zoom_pct)."""
@@ -1093,6 +1224,8 @@ class DecisionFlowVizPanel(QWidget):
         self._last_placed = []
         self._needs_initial_refit = False
         self._scene.clear()
+        # 空场景不需要动画，停掉定时器（避免隐藏页也常驻 CPU）。
+        self._fx_timer.stop()
         self._render_hud(merged=[], terminal=None)
         hint = _EmptyHint("等待分析…\n提交后将显示左右分支决策流程图")
         hint.setPos(-200, 60)
@@ -1211,5 +1344,7 @@ class DecisionFlowVizPanel(QWidget):
         self._needs_initial_refit = True
         self._fit_scene(rect)
         self.schedule_refit_view()
+        # 场景里现在有会动的 item，可见时才把动画定时器跑起来。
+        self._sync_fx_timer()
         self._play_status.setText("")
         return bool(placed)

@@ -1,6 +1,7 @@
 """Main application window for PA Agent."""
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -28,11 +29,69 @@ from PyQt6.QtCore import Qt
 
 from pa_agent.app_context import AppContext
 from pa_agent.gui.validation_debug_dialog import show_validation_debug_dialog
+from pa_agent.util.threading import OrchestratorEvent
 
 logger = logging.getLogger(__name__)
 
 # Zombie timeout in milliseconds (5 seconds)
 _WORKER_JOIN_TIMEOUT_MS = 5000
+
+# TradingView 探测可能阻塞在一次 socket 读里长达数十秒；关窗时只为它短暂
+# 等待，超时就断开信号并让它自行结束，别让「关闭窗口」跟着卡住。
+_TV_PROBE_JOIN_TIMEOUT_MS = 1500
+
+# ── 分析进度事件常量 ──────────────────────────────────────────────────────────
+# status bar / FlowBar / 流式面板的状态机一律依赖这些常量，不再直接比较中文
+# 字面量：过去文案一改（例如把「阶段一完成」改成「阶段一已完成」），分支就会
+# 静默失效，界面只剩状态栏文字变化，FlowBar 与阶段标题都不再推进。
+# 这些取值同时也是 EventBus.status 上传输的文本，所以必须是用户可见的中文。
+EVENT_STAGE1_STARTED = "阶段一分析中…"
+EVENT_STAGE1_RETRY = "阶段一重试"
+EVENT_STAGE1_DONE = "阶段一完成"
+EVENT_STAGE1_FAILED = "阶段一失败"
+EVENT_STAGE2_STARTED = "阶段二分析中…"
+EVENT_STAGE2_RETRY = "阶段二重试"
+EVENT_STAGE2_DONE = "阶段二完成"
+EVENT_STAGE2_FAILED = "阶段二失败"
+EVENT_RECORD_SAVED = "记录已保存"
+EVENT_CANCELLED = "已取消"
+EVENT_DATA_DELAY = "数据延迟"
+
+#: 状态机需要识别的全部事件文本（_EVENT_LABELS 的取值必须落在这个集合里）。
+ANALYSIS_EVENT_TEXTS: frozenset[str] = frozenset(
+    {
+        EVENT_STAGE1_STARTED,
+        EVENT_STAGE1_RETRY,
+        EVENT_STAGE1_DONE,
+        EVENT_STAGE1_FAILED,
+        EVENT_STAGE2_STARTED,
+        EVENT_STAGE2_RETRY,
+        EVENT_STAGE2_DONE,
+        EVENT_STAGE2_FAILED,
+        EVENT_RECORD_SAVED,
+        EVENT_CANCELLED,
+    }
+)
+
+#: OrchestratorEvent -> 状态文本。在模块导入时构建并做一致性断言，
+#: 文案与常量脱钩会立即在导入阶段报错，而不是在界面上静默失效。
+_EVENT_LABELS: dict[Any, str] = {
+    OrchestratorEvent.Stage1Started: EVENT_STAGE1_STARTED,
+    OrchestratorEvent.Stage1Retry: EVENT_STAGE1_RETRY,
+    OrchestratorEvent.Stage1Done: EVENT_STAGE1_DONE,
+    OrchestratorEvent.Stage2Started: EVENT_STAGE2_STARTED,
+    OrchestratorEvent.Stage2Retry: EVENT_STAGE2_RETRY,
+    OrchestratorEvent.Stage2Done: EVENT_STAGE2_DONE,
+    OrchestratorEvent.RecordSaved: EVENT_RECORD_SAVED,
+    OrchestratorEvent.Cancelled: EVENT_CANCELLED,
+    OrchestratorEvent.Stage1Failed: EVENT_STAGE1_FAILED,
+    OrchestratorEvent.Stage2Failed: EVENT_STAGE2_FAILED,
+}
+
+assert set(_EVENT_LABELS.values()) == ANALYSIS_EVENT_TEXTS, (
+    "_EVENT_LABELS 的文案与 ANALYSIS_EVENT_TEXTS 常量不一致："
+    f"{sorted(set(_EVENT_LABELS.values()) ^ ANALYSIS_EVENT_TEXTS)}"
+)
 
 
 def _source_attr(source: Any, public: str, private: str, default: Any) -> Any:
@@ -120,6 +179,59 @@ def _best_probability_key(probs: dict) -> str | None:
     return best_key
 
 
+# ── TradingView 连通性探测 ────────────────────────────────────────────────────
+
+class _TradingViewProbeWorker(QThread):
+    """Run the TradingView connectivity probe off the GUI thread.
+
+    check_tradingview_connectivity() 内部串行做 3 次探测，每次 timeout=20s，
+    中间还有 3s 休眠，最坏约 66 秒。这段逻辑曾在 GUI 主线程同步执行，主窗口
+    会整段冻结（连「探测中」都画不出来）。现在放到后台线程，结果通过信号回到
+    主线程；线程对象由窗口持有并在关闭时 join，不会留下悬空线程。
+
+    Signals
+    -------
+    probe_finished(bool, str):
+        (ok, detail)；ok=False 时 detail 是失败原因。
+    """
+
+    probe_finished = pyqtSignal(bool, str)
+
+    def __init__(
+        self,
+        *,
+        timeout_s: float | None = None,
+        max_attempts: int | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._timeout_s = timeout_s
+        self._max_attempts = max_attempts
+
+    def run(self) -> None:
+        """QThread entry point: run the probe and emit the result."""
+        ok = False
+        detail = ""
+        try:
+            from pa_agent.data.tradingview_connectivity import (
+                check_tradingview_connectivity,
+            )
+
+            kwargs: dict[str, Any] = {}
+            if self._timeout_s is not None:
+                kwargs["timeout_s"] = self._timeout_s
+            if self._max_attempts is not None:
+                kwargs["max_attempts"] = self._max_attempts
+            ok, detail = check_tradingview_connectivity(**kwargs)
+        except Exception as exc:  # 探测失败绝不能挡住启动
+            logger.warning("TradingView connectivity probe crashed: %s", exc)
+            ok, detail = False, str(exc)
+        try:
+            self.probe_finished.emit(bool(ok), str(detail or ""))
+        except RuntimeError as exc:  # pragma: no cover - 窗口已销毁
+            logger.debug("TradingView probe result dropped: %s", exc)
+
+
 # ── AI Worker ─────────────────────────────────────────────────────────────────
 
 class _AnalysisWorker(QThread):
@@ -171,21 +283,6 @@ class _AnalysisWorker(QThread):
         self._incremental_new_bar_count = incremental_new_bar_count
 
     def run(self) -> None:
-        from pa_agent.util.threading import OrchestratorEvent
-
-        _EVENT_LABELS = {
-            OrchestratorEvent.Stage1Started: "阶段一分析中…",
-            OrchestratorEvent.Stage1Retry: "阶段一重试",
-            OrchestratorEvent.Stage1Done: "阶段一完成",
-            OrchestratorEvent.Stage2Started: "阶段二分析中…",
-            OrchestratorEvent.Stage2Retry: "阶段二重试",
-            OrchestratorEvent.Stage2Done: "阶段二完成",
-            OrchestratorEvent.RecordSaved: "记录已保存",
-            OrchestratorEvent.Cancelled: "已取消",
-            OrchestratorEvent.Stage1Failed: "阶段一失败",
-            OrchestratorEvent.Stage2Failed: "阶段二失败",
-        }
-
         def on_event(event: OrchestratorEvent) -> None:
             label = _EVENT_LABELS.get(event, str(event))
             self.status_update.emit(label)
@@ -294,6 +391,12 @@ class MainWindow(QMainWindow):
         self._demo_waiting_flow_playback = False
         self._startup_api_key_check_done = False
         self._startup_tv_connectivity_check_done = False
+        # 后台 TradingView 连通性探测线程（最多一个在跑）
+        self._tv_probe_worker: _TradingViewProbeWorker | None = None
+        self._tv_probe_background = False
+        #: 探测期间用户点过「获取数据」——结果出来后要接着拉数据，别吞掉点击。
+        self._tv_probe_fetch_requested = False
+        self._zombie_probe_workers: list[Any] = []
         self._symbol_switch_timer: QTimer | None = None
         self._pending_symbol_switch: tuple[str, str] | None = None
         # RefreshLoop runs in its own QThread
@@ -933,6 +1036,137 @@ class MainWindow(QMainWindow):
                     return
             sfw.deleteLater()
 
+    # ── TradingView 连通性探测（非阻塞） ──────────────────────────────────────
+
+    def _is_tv_probe_running(self) -> bool:
+        """是否已有探测线程在跑（同一时刻只允许一个）。"""
+        worker = getattr(self, "_tv_probe_worker", None)
+        return worker is not None and worker.isRunning()
+
+    def _start_tv_connectivity_probe(self, *, background: bool) -> None:
+        """启动 TradingView 连通性探测（后台线程，不阻塞 GUI）。
+
+        background=True：启动时的静默预检，失败/超时只在状态栏与日志里留痕，
+        不弹窗、不阻塞启动流程；background=False：用户点「获取数据」时的探测，
+        失败会弹出无法使用的说明对话框。
+        """
+        if self._window_closing or not _qobject_alive(self):
+            return
+        if self._is_tv_probe_running():
+            logger.debug("TradingView probe already running; skip duplicate")
+            if not background:
+                # 启动预检还在跑，而用户已经点了「获取数据」：记下意图，
+                # 等这次探测出结果后自动接着拉数据，别让点击被吞掉。
+                self._tv_probe_fetch_requested = True
+                self._status_bar.showMessage("正在探测 TradingView 连通性…")
+            return
+
+        worker = _TradingViewProbeWorker(parent=None)
+        self._tv_probe_worker = worker
+        self._tv_probe_background = bool(background)
+        self._tv_probe_fetch_requested = not background
+        worker.probe_finished.connect(self._on_tv_probe_finished)
+        worker.finished.connect(self._on_tv_probe_thread_finished)
+
+        if not background:
+            self._status_bar.showMessage("正在探测 TradingView 连通性…")
+            btn = getattr(self, "_fetch_data_btn", None)
+            if btn is not None:
+                btn.setEnabled(False)
+                btn.setToolTip("正在探测 TradingView 连通性…")
+        logger.info(
+            "TradingView probe started (background=%s)", background
+        )
+        worker.start()
+
+    def _on_tv_probe_finished(self, ok: bool, detail: str) -> None:
+        """探测结果回到主线程：恢复按钮，并按 ok 分派后续动作。"""
+        if not self._ui_is_alive():
+            return
+        background = bool(getattr(self, "_tv_probe_background", False))
+        fetch_requested = bool(getattr(self, "_tv_probe_fetch_requested", False))
+        self._tv_probe_fetch_requested = False
+        self._restore_fetch_button_after_probe()
+        if ok:
+            logger.info("TradingView probe succeeded")
+            if fetch_requested:
+                # 探测的 WebSocket 需要一点时间真正断开，别同步启动刷新循环。
+                QTimer.singleShot(200, self._restart_refresh_loop)
+            return
+        logger.info("TradingView unreachable: %s", detail or "unknown")
+        if background and not fetch_requested:
+            # 启动预检失败绝不打断启动流程，只留提示。
+            if self._current_data_source_kind() == "tradingview":
+                self._status_bar.showMessage(
+                    "TradingView 暂不可达：可点击「获取数据」重试，或切换数据来源"
+                )
+            return
+        from pa_agent.gui.tv_connectivity_dialog import (
+            show_tv_connectivity_blocked_dialog,
+        )
+
+        choice = show_tv_connectivity_blocked_dialog(self)
+        if choice == "mt5":
+            self._select_data_source_kind("mt5", switch=True)
+
+    def _restore_fetch_button_after_probe(self) -> None:
+        """探测结束后把「获取数据」按钮恢复成可点状态（幂等）。"""
+        btn = getattr(self, "_fetch_data_btn", None)
+        if btn is None:
+            return
+        try:
+            btn.setEnabled(True)
+            btn.setToolTip("开始从当前数据源持续拉取 K 线数据并实时更新图表")
+        except RuntimeError as exc:  # pragma: no cover - 控件已销毁
+            logger.debug("Fetch button already gone: %s", exc)
+
+    def _on_tv_probe_thread_finished(self) -> None:
+        """QThread.finished：释放线程对象，避免窗口关闭后仍被 Qt 引用。"""
+        worker = getattr(self, "_tv_probe_worker", None)
+        self._tv_probe_worker = None
+        if worker is not None and not worker.isRunning():
+            worker.deleteLater()
+
+    def _cancel_tv_probe_worker(self, *, join_ms: int) -> None:
+        """关闭窗口时安全收尾探测线程（不留下悬空线程）。"""
+        worker = getattr(self, "_tv_probe_worker", None)
+        self._tv_probe_worker = None
+        if worker is None:
+            return
+        # 先断信号：即使线程还在 socket 里阻塞，结果也不会回到已销毁的控件。
+        with contextlib.suppress(TypeError, RuntimeError):
+            worker.probe_finished.disconnect(self._on_tv_probe_finished)
+        with contextlib.suppress(TypeError, RuntimeError):
+            worker.finished.disconnect(self._on_tv_probe_thread_finished)
+        if worker.isRunning():
+            # 探测本身是 socket 阻塞调用，无法中途打断；最多等 join_ms，
+            # 超时后让它自行结束（daemon 语义），不再向已销毁的控件发信号。
+            worker.wait(max(0, int(join_ms)))
+        if worker.isRunning():
+            logger.warning(
+                "TradingView probe still running after %d ms; detaching", join_ms
+            )
+            zombies = getattr(self, "_zombie_probe_workers", None)
+            if zombies is None:
+                zombies = []
+                self._zombie_probe_workers = zombies
+            zombies.append(worker)
+            return
+        worker.deleteLater()
+
+    def _reap_zombie_probe_workers(self) -> None:
+        """回收已自行结束的超时探测线程。"""
+        zombies = getattr(self, "_zombie_probe_workers", None)
+        if not zombies:
+            return
+        still_alive: list[Any] = []
+        for worker in zombies:
+            if worker.isRunning():
+                still_alive.append(worker)
+            else:
+                worker.deleteLater()
+        self._zombie_probe_workers = still_alive
+
     def _reap_zombie_loops(self) -> None:
         """Join any zombie RefreshLoops that have finished since last check.
 
@@ -1450,14 +1684,15 @@ class MainWindow(QMainWindow):
                 self._status_bar.clearMessage()
             return
         self._status_bar.showMessage(text)
-        if text == "数据延迟":
+        if text == EVENT_DATA_DELAY:
             self._update_symbol_data_alert()
         if self._analysis_in_progress:
             panel = getattr(self, "_stream_panel", None)
             if panel is not None:
-                if text in ("阶段一重试",):
+                # 分支依赖 EVENT_* 常量，不依赖裸中文字面量。
+                if text == EVENT_STAGE1_RETRY:
                     panel.mark_retry("stage1")
-                elif text in ("阶段二重试",):
+                elif text == EVENT_STAGE2_RETRY:
                     panel.mark_retry("stage2")
                 else:
                     panel.on_analysis_progress(text)
@@ -1465,29 +1700,29 @@ class MainWindow(QMainWindow):
         flow = getattr(self, "_flow_bar", None)
         if flow is not None:
             # Steps: 0=数据 1=快照 2=诊断(Stage1) 3=决策(Stage2) 4=追问
-            if text == "阶段一分析中…":
+            if text == EVENT_STAGE1_STARTED:
                 flow.set_step_status(0, "done")
                 flow.set_step_caption(0, "已就绪")
                 flow.set_step_status(1, "done")
                 flow.set_step_caption(1, "已获取")
                 flow.set_step_status(2, "active")
                 flow.set_step_caption(2, "分析中…")
-            elif text in ("阶段一完成",):
+            elif text == EVENT_STAGE1_DONE:
                 flow.set_step_status(2, "done")
                 flow.set_step_caption(2, "已完成")
-            elif text in ("阶段一失败",):
+            elif text == EVENT_STAGE1_FAILED:
                 flow.set_step_status(2, "error")
                 flow.set_step_caption(2, "失败")
-            elif text == "阶段二分析中…":
+            elif text == EVENT_STAGE2_STARTED:
                 flow.set_step_status(3, "active")
                 flow.set_step_caption(3, "决策中…")
-            elif text in ("阶段二完成",):
+            elif text == EVENT_STAGE2_DONE:
                 flow.set_step_status(3, "done")
                 flow.set_step_caption(3, "已完成")
-            elif text in ("阶段二失败",):
+            elif text == EVENT_STAGE2_FAILED:
                 flow.set_step_status(3, "error")
                 flow.set_step_caption(3, "失败")
-            elif text in ("已取消",):
+            elif text == EVENT_CANCELLED:
                 for idx in range(5):
                     flow.set_step_status(idx, "idle")
 
@@ -1535,21 +1770,16 @@ class MainWindow(QMainWindow):
             self._on_symbol_or_tf_changed(new_symbol, new_tf)
             return
 
-        # For TradingView, probe connectivity on-demand (not at startup)
+        # For TradingView, probe connectivity on-demand — in a BACKGROUND thread:
+        # the probe retries 3 × 20 s with sleeps in between, so running it inline
+        # used to freeze the whole window for about a minute.
         if self._current_data_source_kind() == "tradingview":
-            from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
-            ok, detail = check_tradingview_connectivity()
-            if not ok:
-                if detail:
-                    logger.info("TradingView unreachable: %s", detail)
-                from pa_agent.gui.tv_connectivity_dialog import show_tv_connectivity_blocked_dialog
-                choice = show_tv_connectivity_blocked_dialog(self)
-                if choice == "mt5":
-                    self._select_data_source_kind("mt5", switch=True)
+            if self._is_tv_probe_running():
+                # 复用进行中的探测，但记下这次点击：结果出来后要接着拉数据。
+                self._tv_probe_fetch_requested = True
+                self._status_bar.showMessage("正在探测 TradingView 连通性…")
                 return
-            # Give the probe's WebSocket a moment to disconnect without
-            # blocking the GUI event loop or making the window unresponsive.
-            QTimer.singleShot(1500, self._restart_refresh_loop)
+            self._start_tv_connectivity_probe(background=False)
             return
         self._restart_refresh_loop()
 
@@ -2880,6 +3110,11 @@ class MainWindow(QMainWindow):
 
     def _begin_submit_analysis(self, *, force_incremental: bool) -> None:
         """Shared entry for normal and forced-incremental submit buttons."""
+        # 忙碌态是硬闸门：分析进行中不重复提交（按钮此时已 disable，
+        # 这里兜住程序化触发与 disable 之前排队的点击）。
+        if self._analysis_busy:
+            logger.warning("Submit ignored: analysis already in progress")
+            return
         if not self._can_submit():
             reason = self._submit_block_reason() or "当前无法提交分析"
             status_bar = getattr(self, "_status_bar", None)
@@ -4305,9 +4540,15 @@ class MainWindow(QMainWindow):
             self._cancel_analysis_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             self._cancel_analysis_prep_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             self._cancel_snapshot_fetch_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
+            # 后台 TV 探测线程：断开信号后再 join，避免结果回到已销毁的控件。
+            self._cancel_tv_probe_worker(join_ms=_TV_PROBE_JOIN_TIMEOUT_MS)
             self._stop_refresh_loop()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Shutdown cleanup skipped: %s", exc)
+        try:
+            self._reap_zombie_probe_workers()
+        except Exception as exc:  # pragma: no cover - 防御性清理
+            logger.debug("Probe worker reaping skipped: %s", exc)
         self._join_shutdown_threads()
         super().closeEvent(event)
 
@@ -4332,10 +4573,14 @@ class MainWindow(QMainWindow):
         if not self._startup_tv_connectivity_check_done:
             self._startup_tv_connectivity_check_done = True
             QTimer.singleShot(0, self._on_startup_tv_connectivity_check)
+
     def _on_startup_tv_connectivity_check(self) -> None:
+        # 启动预检：后台探测。失败/超时只在状态栏留痕，绝不阻塞启动流程。
         if self._current_data_source_kind() != "tradingview":
             return
-        self._ensure_tradingview_reachable()
+        if self._window_closing or not _qobject_alive(self):
+            return
+        self._start_tv_connectivity_probe(background=True)
 
     def _on_startup_api_key_check(self) -> None:
         self._refresh_api_key_ui_state()
@@ -4543,18 +4788,52 @@ class MainWindow(QMainWindow):
             return "正在切换品种/周期"
         return None
 
+    #: 分析进行中的忙碌态字段名（_analysis_busy 属性就是它的镜像）。
+    _BUSY_FIELD = "_analysis_in_progress"
+
+    @property
+    def _analysis_busy(self) -> bool:
+        """明确的「分析中」忙碌态：按钮 enable/disable 与重复提交拦截都读它。
+
+        兼容层：历史的 ``window._analysis_in_progress`` 字段仍是唯一事实来源，
+        这个属性只是给它一个语义明确的名字，避免再有调用点靠
+        ``button.isEnabled()`` 之类的间接状态去猜忙碌与否。
+        """
+        return bool(getattr(self, self._BUSY_FIELD, False))
+
+    @_analysis_busy.setter
+    def _analysis_busy(self, value: bool) -> None:
+        setattr(self, self._BUSY_FIELD, bool(value))
+        # 字段是按钮状态的唯一输入，改动后立刻同步，避免界面落后于状态。
+        if not hasattr(self, "_submit_btn"):
+            return
+        try:
+            if self._ui_is_alive():
+                self._update_submit_button_state()
+        except RuntimeError as exc:  # pragma: no cover - 控件已销毁
+            logger.debug("Submit button sync skipped during teardown: %s", exc)
+
+    def _submit_buttons_enabled(self) -> bool:
+        """提交按钮的唯一判定：非忙碌才可点。
+
+        其它锁定原因（未配 API Key、数据源未连接、等待收盘…）不 disable 按钮，
+        而是让点击后由 ``_begin_submit_analysis`` 在状态栏说明原因 —— 一个
+        灰掉且无反馈的按钮看起来像坏了。
+        """
+        return not self._analysis_busy
+
     def _sync_submit_button_state(self) -> None:
-        """Enable submit button, update its label, and surface why it may be locked."""
+        """按忙碌态同步提交按钮的 enable/disable、提示与文案。"""
         if not hasattr(self, "_submit_btn"):
             return
         reason = self._submit_block_reason()
         can = reason is None
-        # Keep the button clickable so a blocked submission explains the
-        # reason in the status bar.  A disabled Qt button silently ignores
-        # clicks, which looked like a broken submit action to users.
-        self._submit_btn.setEnabled(True)
+        enabled = self._submit_buttons_enabled()
+        # enabled 只由 _analysis_busy 决定：分析进行中真正 disable（不会重复提交），
+        # 其余锁定原因保持可点，以便点击后把原因写进状态栏。
+        self._submit_btn.setEnabled(enabled)
         if hasattr(self, "_incremental_submit_btn"):
-            self._incremental_submit_btn.setEnabled(True)
+            self._incremental_submit_btn.setEnabled(enabled)
             if can:
                 self._incremental_submit_btn.setToolTip(
                     "强制基于同品种/周期最近一条成功记录做增量分析，"
@@ -4565,6 +4844,8 @@ class MainWindow(QMainWindow):
                 self._incremental_submit_btn.setToolTip(reason or "")
         if can:
             self._submit_btn.setToolTip("")
+        elif self._analysis_busy:
+            self._submit_btn.setToolTip("分析进行中，请等待本轮分析结束或先取消")
         else:
             self._submit_btn.setToolTip(reason or "")
 
@@ -4586,8 +4867,10 @@ class MainWindow(QMainWindow):
         """
         if not hasattr(self, "_submit_btn"):
             return
-        # Don't change label while analysis is running or button is disabled.
-        if self._analysis_in_progress or not self._submit_btn.isEnabled():
+        # Don't change label while a submission is in flight.  The busy flag is
+        # the single source of truth — reading button.isEnabled() here was the
+        # dead branch (the button is always clickable unless busy).
+        if self._analysis_busy:
             self._submit_btn.setText("提交分析")
             self._incremental_available = False
             return
