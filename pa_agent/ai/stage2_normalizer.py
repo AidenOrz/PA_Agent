@@ -5,6 +5,8 @@ import copy
 import logging
 from typing import Any
 
+from pa_agent.ai.no_order import NO_ORDER_NULL_FIELDS, clear_decision_to_no_order
+from pa_agent.ai.section14 import section14_violated
 from pa_agent.ai.trace_normalize import normalize_stage2_traces
 from pa_agent.util.price_tick import (
     normalize_breakout_basis_extreme,
@@ -120,16 +122,8 @@ _ORDER_TYPE_ALIASES: dict[str, str] = {
     "market": "市价单",
     "market_order": "市价单",
 }
-_NO_ORDER_PRICE_FIELDS = (
-    "order_direction",
-    "entry_price",
-    "take_profit_price",
-    "take_profit_price_2",
-    "stop_loss_price",
-    "entry_basis_bar",
-    "entry_basis_extreme",
-    "entry_rule",
-)
+# Single source of truth (also used by the §11 router and its coercion path).
+_NO_ORDER_PRICE_FIELDS = NO_ORDER_NULL_FIELDS
 
 # Valid enum values for features_used in next_bar_prediction / next_cycle_prediction.
 # Must stay in sync with schemas.py _NEXT_BAR_PREDICTION / _NEXT_CYCLE_PREDICTION.
@@ -515,55 +509,20 @@ def _trace_node_answer(trace: Any, node_id: str) -> str | None:
 
 
 def _section14_violated(trace: Any) -> bool:
-    """Return True only when §14 answer is 是 AND the reason text confirms a violation.
+    """True only when a §14 node asserts a violation (answer=是 + reason agrees).
 
-    Background: §14 question is "是否触犯禁止行为清单？"
-      answer=是  → violated (程序强制 order_type=不下单)
-      answer=否  → not violated (can proceed)
-
-    Some models incorrectly write answer=是 to mean "I completed the scan (no violations)".
-    To guard against this common mistake we cross-check the reason text: if it contains
-    explicit denial phrases (未触犯 / 未违反 / 无触犯 / 通过) we do NOT treat it as a
-    violation.  This is a safety hatch — the prompt now clearly specifies answer=否 for
-    the no-violation case, so future outputs should be correct.
+    §14 asks "是否触犯禁止行为清单？": answer=是 means violated.  Some models
+    write answer=是 to mean "scan finished, nothing hit", so the reason text is
+    cross-checked by :func:`pa_agent.ai.section14.section14_violated`.  That
+    parser is clause-aware: a denial in one clause does not vouch for a
+    violation asserted in another ("未触发§14.1，但触发了追高禁止" is still a
+    violation).
     """
-    _DENIAL_PHRASES = ("未触犯", "未违反", "无触犯", "无违规", "通过扫描", "扫描通过", "无禁止", "未触发")
-    if not isinstance(trace, list):
-        return False
-    for item in trace:
-        if not isinstance(item, dict):
-            continue
-        nid = str(item.get("node_id", "")).strip()
-        if not nid.startswith("14"):
-            continue
-        if str(item.get("answer", "")).strip() != "是":
-            continue
-        # answer=是: check reason for denial phrases before treating as violation
-        reason = str(item.get("reason", "") or "")
-        if any(phrase in reason for phrase in _DENIAL_PHRASES):
-            # AI wrote answer=是 but reason says no violation — ignore (AI used wrong answer)
-            logger.debug(
-                "_section14_violated: node %s answer=是 but reason contains denial phrase; "
-                "treating as NOT violated (AI should use answer=否 for no-violation)",
-                nid,
-            )
-            continue
-        return True
-    return False
+    return section14_violated(trace)
 
 
 def _clear_decision_to_no_order(decision: dict[str, Any]) -> None:
-    decision["order_type"] = "不下单"
-    for field in _NO_ORDER_PRICE_FIELDS:
-        decision[field] = None
-    decision["estimated_win_rate"] = None
-    decision["estimated_win_rate_reasoning"] = None
-    # trade_confidence / trade_confidence_reasoning: schema requires non-null values.
-    # When the breaker forces 不下单, provide valid defaults.
-    if decision.get("trade_confidence") is None:
-        decision["trade_confidence"] = 0
-    if not isinstance(decision.get("trade_confidence_reasoning"), str) or not decision["trade_confidence_reasoning"]:
-        decision["trade_confidence_reasoning"] = "无入场计划，不存在交易信心"
+    clear_decision_to_no_order(decision)
 
 
 def _set_trace_node_answer(
@@ -667,11 +626,35 @@ def _repair_terminal_trade_node(out: dict[str, Any]) -> bool:
     return True
 
 
+def _program_follow_through(kline_frame: Any, seq: int | None) -> str | None:
+    """Program-computed follow-through verdict for bar *seq* ("yes"/"no"/"pending")."""
+    if kline_frame is None or seq is None:
+        return None
+    try:
+        from pa_agent.ai.kline_features import compute_kline_geometry_features
+
+        for feat in compute_kline_geometry_features(kline_frame):
+            if feat.seq == seq:
+                return str(feat.follow_through_1_2 or "").strip().lower() or None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("follow-through probe failed for K%s: %s", seq, exc)
+    return None
+
+
 def _normalize_market_order_entry_bar(
     bar_analysis: dict[str, Any],
     decision: dict[str, Any],
+    kline_frame: Any = None,
 ) -> bool:
-    """Market orders need a concrete entry_bar; borrow signal_bar when model left it pending."""
+    """Market orders need a concrete entry_bar; borrow signal_bar when model left it pending.
+
+    The borrowed verdict fields used to be hard-coded positive
+    (``follow_through=True``, ``freshness="fresh"``), i.e. the normalizer
+    invented evidence that the model never supplied and the program never
+    measured.  Now follow_through comes from the program-computed bar geometry
+    when a frame is available, and stays "" (unknown) otherwise so the
+    validator can weigh it instead of trusting a fabricated True.
+    """
     if decision.get("order_type") != "市价单":
         return False
     entry_bar = bar_analysis.get("entry_bar")
@@ -689,14 +672,39 @@ def _normalize_market_order_entry_bar(
     strength_map = {"strong": "strong", "medium": "weak", "weak": "weak", "low": "weak", "high": "strong"}
     entry_bar["strength"] = strength_map.get(raw_strength, "weak")
     entry_bar["freshness"] = "fresh"
-    entry_bar["follow_through"] = True
+    entry_seq = parse_k_seq(entry_bar.get("bar"))
+    measured = _program_follow_through(kline_frame, entry_seq)
+    existing = entry_bar.get("follow_through")
+    if measured is not None:
+        entry_bar["follow_through"] = measured == "yes"
+        logger.debug(
+            "market order: entry_bar.follow_through=%s from K%s geometry",
+            entry_bar["follow_through"],
+            entry_seq,
+        )
+    elif existing is None:
+        # No measurement and no model claim: leave it explicitly unknown rather
+        # than asserting True.  "pending" is the schema-valid "not established".
+        entry_bar["follow_through"] = "pending"
+        logger.debug("market order: follow_through unknown for K%s; left pending", entry_seq)
     entry_bar["still_valid"] = entry_bar.get("still_valid", True)
     logger.debug("market order: entry_bar.bar set from signal_bar %s", sig_bar)
     return True
 
 
-def _normalize_signal_entry_bar_chain(bar_analysis: dict[str, Any], decision: dict[str, Any]) -> bool:
-    """Signal K must be strictly older than entry K (larger seq); pending entry exempt."""
+def _normalize_signal_entry_bar_chain(
+    bar_analysis: dict[str, Any],
+    decision: dict[str, Any],
+    kline_frame: Any = None,
+) -> bool:
+    """Signal K must be strictly older than entry K (larger seq); pending entry exempt.
+
+    When the model's signal bar is not older than its entry bar, the old code
+    relabelled the signal bar to "K{entry+1}" — a bar that may not exist, and
+    which asserted a signal-bar relationship the frame never showed.  Now the
+    referenced bars are checked against the frame first; a bogus relabel is
+    refused and the mismatch is left for the validator to reject.
+    """
     if decision.get("order_type") not in _TRADE_ORDER_TYPES:
         return False
     signal_bar = bar_analysis.get("signal_bar")
@@ -706,11 +714,13 @@ def _normalize_signal_entry_bar_chain(bar_analysis: dict[str, Any], decision: di
 
     strength = str(entry_bar.get("strength", "") or "").strip().lower()
     freshness = str(entry_bar.get("freshness", "") or "").strip().lower()
-    pending = (
-        strength == "not_triggered"
-        or not entry_bar.get("bar")
-        or freshness in ("pending", "stale", "invalid")
-    )
+    # A stale/invalid verdict is NOT a pending entry: it means the setup this
+    # entry bar belonged to was invalidated.  Treating it as pending (as this
+    # did) let the chain clear entry_bar.bar, which erased the invalidation and
+    # presented an expired setup as an untriggered one.
+    if freshness in ("stale", "invalid"):
+        return False
+    pending = strength == "not_triggered" or not entry_bar.get("bar")
     if pending:
         entry_bar["bar"] = None
         entry_bar["strength"] = "not_triggered"
@@ -726,11 +736,21 @@ def _normalize_signal_entry_bar_chain(bar_analysis: dict[str, Any], decision: di
     if signal_seq > entry_seq:
         return False
 
-    signal_bar["bar"] = f"K{entry_seq + 1}"
+    target_seq = entry_seq + 1
+    if kline_frame is not None:
+        seqs = {getattr(bar, "seq", None) for bar in getattr(kline_frame, "bars", ()) or ()}
+        if target_seq not in seqs:
+            logger.debug(
+                "signal_bar K%s cannot be relabelled to K%s: bar not in frame",
+                signal_seq,
+                target_seq,
+            )
+            return False
+    signal_bar["bar"] = f"K{target_seq}"
     logger.debug(
         "signal_bar K%s -> K%s (must be older than entry K%s)",
         signal_seq,
-        entry_seq + 1,
+        target_seq,
         entry_seq,
     )
     return True
@@ -1445,8 +1465,8 @@ def normalize_stage2(
     bar_analysis = out.get("bar_analysis")
     decision = out.get("decision")
     if isinstance(bar_analysis, dict) and isinstance(decision, dict):
-        _normalize_market_order_entry_bar(bar_analysis, decision)
-        if _normalize_signal_entry_bar_chain(bar_analysis, decision):
+        _normalize_market_order_entry_bar(bar_analysis, decision, kline_frame)
+        if _normalize_signal_entry_bar_chain(bar_analysis, decision, kline_frame):
             pass
     if isinstance(bar_analysis, dict):
         signal_bar = bar_analysis.get("signal_bar")
@@ -1466,8 +1486,16 @@ def normalize_stage2(
                 entry_bar["strength"] = "not_triggered"
                 entry_bar.setdefault("bar", None)
                 fresh = str(entry_bar.get("freshness") or "").strip().lower()
-                if fresh in ("stale", "invalid", "expired", ""):
-                    entry_bar["freshness"] = "pending"
+                if fresh in ("stale", "invalid", "expired"):
+                    # The model says the entry bar went stale.  Rewriting that to
+                    # "pending" — which this used to do — erased the only signal
+                    # that the setup had expired and turned an invalidated entry
+                    # into a live pending one.  Keep the verdict; the validator
+                    # rejects it below.
+                    logger.debug(
+                        "entry_bar has no bar but freshness=%s; keeping stale/invalid",
+                        fresh,
+                    )
                 else:
                     entry_bar.setdefault("freshness", "pending")
                 if entry_bar.get("follow_through") in (None, "", "pending"):

@@ -28,6 +28,11 @@ from typing import Any
 
 
 
+from pa_agent.ai.no_order import clear_decision_to_no_order
+from pa_agent.ai.section14 import section14_violated
+
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -1870,34 +1875,11 @@ def route_order_method(
 
     def _sec14_violated(trace: list) -> bool:
 
-        _DENIAL_PHRASES = ("未触犯", "未违反", "无触犯", "无违规", "通过扫描", "扫描通过", "无禁止", "未触发")
+        # Delegates to the shared clause-aware parser: a denial in one clause
 
-        for item in trace:
+        # must not vouch for a violation asserted in another.
 
-            if not isinstance(item, dict):
-
-                continue
-
-            nid = str(item.get("node_id", "")).strip()
-
-            if not nid.startswith("14"):
-
-                continue
-
-            if str(item.get("answer", "")).strip() != "是":
-
-                continue
-
-            # Cross-check reason: if it contains denial phrases the AI used wrong answer
-            reason = str(item.get("reason", "") or "")
-
-            if any(phrase in reason for phrase in _DENIAL_PHRASES):
-
-                continue
-
-            return True
-
-        return False
+        return section14_violated(trace)
 
 
 
@@ -1907,11 +1889,15 @@ def route_order_method(
 
 
 
-    cycle = "unknown"
+    # Without stage1 there is no cycle_position to route on.  Treating that as
+    # cycle="unknown" made the router coerce every trade into 不下单 (see the
+    # candidate check below), which turned a missing-input problem into a silent
+    # order rejection.  No stage1 → no §11 routing decision to make.
+    if not stage1:
 
-    if stage1:
+        return []
 
-        cycle = str(stage1.get("cycle_position", "unknown") or "unknown").strip()
+    cycle = str(stage1.get("cycle_position", "unknown") or "unknown").strip()
 
 
 
@@ -1930,21 +1916,28 @@ def route_order_method(
             )
         )
 
-    # Preserve model's explicit limit/market choice when §10.3 already passed.
+    # Preserve model's explicit limit/market choice when §10.3 already passed —
+    # but never over a cycle that forbids trading at all (extreme_tr / unknown).
+    # Honouring the model there is what let an extreme_tr decision keep a live
+    # 突破单 plan after the router had decided not to trade.
+    cycle_allows_trading = candidate not in ("不下单", "")
     if (
-        model_order_type == "限价单"
+        cycle_allows_trading
+        and model_order_type == "限价单"
         and _trace_answer(decision_trace, "10.3") == "是"
         and _has_trade_prices()
     ):
         candidate = "限价单"
     elif (
-        model_order_type == "市价单"
+        cycle_allows_trading
+        and model_order_type == "市价单"
         and _trace_answer(decision_trace, "10.3") == "是"
         and _has_trade_prices()
     ):
         candidate = "市价单"
     elif (
-        model_order_type == "突破单"
+        cycle_allows_trading
+        and model_order_type == "突破单"
         and _trace_answer(decision_trace, "10.3") == "是"
         and _has_trade_prices()
         and decision.get("entry_basis_bar")
@@ -1956,8 +1949,19 @@ def route_order_method(
 
     if candidate == "不下单":
 
-        # Not a trading context for this cycle
-
+        # Not a trading context for this cycle (extreme_tr / unknown).  The
+        # router used to just return no §11 nodes, which left the model's
+        # prices live: the decision kept order_type=突破单 with a full trade
+        # plan and no audit node, so it reached the order path.  Clear the
+        # decision to a schema-valid 不下单 instead — that is what the cycle
+        # rule actually decided.
+        if decision.get("order_type") != "不下单":
+            logger.debug(
+                "cycle_position=%s forbids trading; coerced order_type=%r to 不下单",
+                cycle,
+                decision.get("order_type"),
+            )
+            clear_decision_to_no_order(decision)
         return []
 
 
@@ -1990,7 +1994,12 @@ def route_order_method(
 
                 candidate = "突破单"
 
-        return []
+        # Only bail out when the spike branch did NOT keep the breakout order.
+        # The unconditional `return []` here dropped the §11 nodes for exactly
+        # the breakout order this branch had just preserved.
+        if candidate == "市价单":
+
+            return []
 
 
 

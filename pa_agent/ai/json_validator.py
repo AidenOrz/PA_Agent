@@ -1102,7 +1102,12 @@ class JsonValidator:
             trade_conf_num = int(trade_conf)
         except (TypeError, ValueError):
             trade_conf_num = 0
-        if freshness in ("stale", "invalid") and not (lenient and pending_entry):
+        # A stale/invalid freshness always blocks a new order.  Lenient mode used
+        # to launder it to "pending" whenever the entry bar looked pending, and
+        # the normalizer had already rewritten stale->pending even earlier, so the
+        # check below never fired on real model output (dead code) and an expired
+        # setup stayed tradable.
+        if freshness in ("stale", "invalid"):
             errors.append("entry_bar.freshness stale/invalid cannot support a new order")
         if (
             not lenient

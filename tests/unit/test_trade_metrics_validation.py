@@ -250,8 +250,13 @@ def test_stage2_validator_auto_fixes_breakout_entry_at_or_inside_basis_high() ->
     assert entry > 102.0
 
 
-def test_stage2_validator_normalizes_stale_entry_bar_to_pending() -> None:
-    """Lenient mode treats stale pending-entry variants as pending, not hard-fail."""
+def test_stage2_validator_rejects_stale_entry_bar() -> None:
+    """A stale entry bar must not be laundered into a tradable/pending one.
+
+    The normalizer used to rewrite stale->pending and lenient mode used to
+    accept it, so an invalidated setup reached the order path looking merely
+    "not triggered yet".  Stale/invalid freshness now always blocks.
+    """
     obj = _stage2_trade_obj()
     obj["bar_analysis"]["entry_bar"]["freshness"] = "stale"
     result = validator.validate(
@@ -260,8 +265,8 @@ def test_stage2_validator_normalizes_stale_entry_bar_to_pending() -> None:
         decision_stance="aggressive",
         kline_frame=_frame(),
     )
-    assert isinstance(result, Ok)
-    assert result.obj["bar_analysis"]["entry_bar"]["freshness"] == "pending"
+    assert isinstance(result, ValidationError)
+    assert any("stale" in f for f in result.invalid_fields)
 
 
 def test_stage2_validator_accepts_pending_limit_entry_bar() -> None:

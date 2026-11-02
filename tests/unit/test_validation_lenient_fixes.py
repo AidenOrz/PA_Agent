@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from pa_agent.ai.json_validator import Ok
+from pa_agent.ai.json_validator import Ok, ValidationError
 from pa_agent.ai.pattern_routing import ensure_detected_patterns_coherent
 from pa_agent.ai.stage1_normalizer import normalize_stage1
 from pa_agent.ai.stage2_normalizer import normalize_stage2
@@ -111,7 +111,13 @@ def test_lenient_validator_fixes_market_order_missing_entry_bar() -> None:
     assert result.obj["bar_analysis"]["entry_bar"]["bar"] == "K1"
 
 
-def test_lenient_validator_maps_expired_freshness_on_pending_entry() -> None:
+def test_lenient_validator_rejects_expired_pending_entry() -> None:
+    """An expired plan is not the same as "not triggered yet".
+
+    Lenient mode used to rewrite expired/stale to pending on a pending entry,
+    which kept an expired limit plan alive.  The entry must now be rejected so
+    the model re-plans instead of silently reusing a dead setup.
+    """
     obj = _stage2_trade_obj(
         order_type="限价单",
         order_direction="做空",
@@ -136,8 +142,12 @@ def test_lenient_validator_maps_expired_freshness_on_pending_entry() -> None:
         decision_stance="aggressive",
         kline_frame=_frame(),
     )
+    # The expired plan must not come back as a live "not triggered yet" one.
     assert isinstance(result, Ok), result
-    assert result.obj["bar_analysis"]["entry_bar"]["freshness"] == "pending"
+    entry_bar = result.obj["bar_analysis"]["entry_bar"]
+    order_type = result.obj["decision"]["order_type"]
+    assert entry_bar["freshness"] != "pending"
+    assert order_type == "不下单", order_type
 
 
 def test_lenient_validator_maps_openclaw_enum_slips() -> None:

@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from pa_agent.ai.section14 import section14_violated
 from pa_agent.config.paths import PROMPT_DIR
 
 _BINARY_DECISION_FILE = "二元决策.txt"
@@ -638,15 +639,10 @@ def validate_stage2_trace_consistency(stage2: dict[str, Any]) -> list[str]:
             if ans_101 == "否":
                 no_entry_plan = True
         if no_entry_plan and outcome == "reject":
-            # Check if §14 genuinely triggered (true violation, not AI misuse)
-            _DENIAL = ("未触犯", "未违反", "无触犯", "无违规", "通过扫描", "扫描通过", "无禁止", "未触发")
-            sec14_genuinely_violated = any(
-                str(item.get("node_id", "")).strip().startswith("14")
-                and str(item.get("answer", "")).strip() == "是"
-                and not any(p in str(item.get("reason", "") or "") for p in _DENIAL)
-                for item in trace
-                if isinstance(item, dict)
-            )
+            # Check if §14 genuinely triggered (true violation, not AI misuse).
+            # Shared clause-aware parser: a denial in one clause must not vouch
+            # for a violation asserted in another.
+            sec14_genuinely_violated = section14_violated(trace)
             if not sec14_genuinely_violated:
                 errors.append(
                     "terminal.outcome should be 'wait' (not 'reject') when there is no "
