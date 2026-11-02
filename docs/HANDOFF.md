@@ -1,6 +1,6 @@
 # PA Agent 交接文档
 
-> 更新：2026-11-02 ｜ 分支 `chore/p2-p3-debt`（自 `fix/p1-audit-fixes` 切出）
+> 更新：2026-11-03 ｜ 已全部合入 `main` 并推送（`c82254e`），CI 首次跑通
 > 上一版停留在 2026-09-03 的修复中途（当时 `30 failed / 649 passed / 38 errors`），
 > 本版按「接受一次全面审查 → 依次修 P0/P1/P2/P3」的推进结果重写。
 
@@ -8,11 +8,12 @@
 
 | 项目 | 结果 | 命令 |
 |------|------|------|
-| 非 live 测试 | **864 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
+| 非 live 测试 | **866 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
 | e2e smoke | **4 passed**（无挂起） | `python -m pytest tests/e2e` |
 | ruff | 198 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
 | black | 全部通过 | `python -m black --check pa_agent tests tools` |
-| 规模 | 133 个源文件 / 135 个测试文件（其中 122 个 `test_*.py`）/ 134 次提交 | — |
+| CI | 首次通过（windows-latest / Python 3.11 / `QT_QPA_PLATFORM=minimal`） | `gh run view 41478417351` |
+| 规模 | 133 个源文件 / 135 个测试文件（其中 122 个 `test_*.py`）/ 139 次提交 | — |
 
 审查开始时的基线是 743 passed / 39 skipped / **6 failed**，e2e 4 个全部挂死（需强杀进程）。
 
@@ -67,6 +68,26 @@
 - `tests/e2e` 曾全部挂死：根因是 `show_validation_debug_dialog` 的模态框阻塞 `qtbot.waitUntil`；
   而 4 个用例本身还依赖 `ctx.settings`（默认 `None`）与 `ctx.data_source`（默认 `None`）。
 
+### 首次真正跑起来的 CI（3 个后续提交）
+
+CI 过去两年只执行 `import pa_agent`，等于从未验证过任何东西。改成真实跑测试后，连续暴露三个问题：
+
+1. **`_DecisionNode.paint` 场景销毁后崩溃**（`b2a57cd`）：`_BranchEdge.phase()` 与
+   `_TerminalNode._anim_phase()` 直接 `self.scene()`，而 `QGraphicsScene.clear()` 会销毁 C++ 对象；
+   排队中的重绘仍会进 `paint()`，此时抛 `RuntimeError: wrapped C/C++ object has been deleted`，
+   异常逃进 Qt 事件循环 → 进程 abort（`exit -1073741819`，连 pytest 汇总都不打印）。
+   修复：新增 `_scene_anim_phase()` 捕获 `RuntimeError` 后回退本地相位。
+2. **无桌面会话时的 QGraphicsView 重绘**：`qwindows` 平台在没有交互式桌面时，Qt 的 backing store
+   反复重绘会交给 `paint()` 一个不可用的 `QPainter`，同样 abort。CI 设 `QT_QPA_PLATFORM=minimal`
+   （`offscreen` 在本地也能复现，不能用；`minimal` 全绿）。
+3. **测试夹具放在被 gitignore 的 `tools/` 下**（`c82254e`）：`tests/unit/test_json_validator.py` 读
+   `tools/stage2_raw_sample.txt`，本地有、CI 检出没有 → 本地绿 / CI 红。夹具挪到
+   `tests/fixtures/stage2_raw_sample.txt` 并纳入版本控制。
+
+**教训**：本地“全绿”可以骗人。验收 CI 相关的改动必须对着**干净检出**验证，
+`git clone --depth 1 file:///E:/PA_Agent .tmp-cleancheck` 再在克隆目录里跑一遍，才能暴露这类
+“依赖了未跟踪文件”的问题。
+
 ## 三、没做 / 已知遗留
 
 1. **ruff 剩余 198 条**未清理：都是需要逐条判断语义的（E402 延迟导入是刻意的循环依赖规避、SIM102
@@ -80,9 +101,11 @@
 ## 四、恢复入口
 
 ```cmd
-git switch chore/p2-p3-debt
+git switch main
 E:\anaconda3\python.exe -m pytest -m "not live" --ignore=tests/e2e --timeout=300
 E:\anaconda3\python.exe -m pytest tests/e2e
+:: 验证“干净检出也能过”（CI 环境等价）：
+git clone --depth 1 file:///E:/PA_Agent .tmp-cleancheck && cd .tmp-cleancheck && pytest -m "not live" --ignore=tests/e2e
 ```
 
 - 改 GUI 相关代码：先跑 `tests/unit/test_tv_probe_nonblocking.py`、`test_gui_state_and_busy.py`、
