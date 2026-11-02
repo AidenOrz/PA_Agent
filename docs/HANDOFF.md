@@ -1,78 +1,100 @@
-# PA Agent 修复工作交接文档
+# PA Agent 交接文档
 
-> 日期：2026-09-03
-> 背景：基于 2026-09-03 全面代码审阅（审阅结论：8-01 清单大部分已落地、新引入 1 处严重回归、30 个测试过时）执行修复。修复进行到一半时用户因软件问题叫停，本文档记录**已修复**与**未修复**的准确状态。
-> 本轮修复前基线：`30 failed / 649 passed / 38 errors`（非 live 测试）。
+> 更新：2026-11-02 ｜ 分支 `chore/p2-p3-debt`（自 `fix/p1-audit-fixes` 切出）
+> 上一版停留在 2026-09-03 的修复中途（当时 `30 failed / 649 passed / 38 errors`），
+> 本版按「接受一次全面审查 → 依次修 P0/P1/P2/P3」的推进结果重写。
 
----
+## 一、当前状态（实测）
 
-## 一、已修复（产品代码）
+| 项目 | 结果 | 命令 |
+|------|------|------|
+| 非 live 测试 | **864 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
+| e2e smoke | **4 passed**（无挂起） | `python -m pytest tests/e2e` |
+| ruff | 198 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
+| black | 全部通过 | `python -m black --check pa_agent tests tools` |
+| 规模 | 133 个源文件 / 135 个测试文件（其中 122 个 `test_*.py`）/ 134 次提交 | — |
 
-| # | 修复 | 文件:位置 | 验证 |
-|---|------|----------|------|
-| 1 | 🔴 `_parse_score_100` 函数体截断回归（置信度/胜率 UI 恒 None）——clamp 逻辑从 `_format_price` 死代码处移回函数体 | `pa_agent/gui/decision_panel.py:99-110` | 直接断言 9 组输入全过；`_format_price` 不受影响 |
-| 2 | 🟠 WeStock 周月线 forming 缺失（未收盘 bar 进入 AI 分析）：`_is_forming_daily_bar` 重写为 `_is_forming_bar`/`_is_forming_bar_at`，覆盖 1d/1w/1M/3M/1y 全周期；新增 `_past_daily_close`（午休不影响周线 forming） | `pa_agent/data/westock_source.py:342-404`（`_rows_to_bars` 调用处同步更新） | 新增 4 个测试（日/周/月季年/rows_to_bars 集成），westock 测试文件 13 个全过 |
-| 3 | 🟠 demo 入口 QThread 旧式取消（崩溃+界面污染+GUI 线程阻塞 5s）：改走标准 `_cancel_analysis_worker` 协议（disconnect→失效 ID→zombie 回收，join_ms=0 不阻塞） | `pa_agent/gui/main_window.py:2496-2500` | 复用其他 4 个入口已验证的协议函数；demo 路径无其他 `_worker` 引用 |
-| 4 | 8-01 清单 #10：`_CHAPTER_ORDER` 缺 `"1."`/`"2."` 键导致 1/2 章节点排到 trace 末尾 | `pa_agent/ai/trace_normalize.py:604-608` | 直接调用 `normalize_trace_list` 验证排序 `1.1→2.3→3.1→14.1→99.9`；normalizer/validation 40 个测试全过 |
-| 5 | 8-01 清单 #12 残留：tushare 指数硬编码 `asset="E"`（000300 等取不到数据）：新增 `is_tushare_index()`（复用 `TV_SSE_INDEX_CODES` + `0009xx` 前缀），指数走 `asset="I", adj=None` | `pa_agent/data/tushare_source.py:73-84, 262-283` | 7 组断言验证（000300/000905/000852/000016 为指数，600519/000001.SZ 不是） |
-| 6 | 8-01 清单 #17 残留：4 条退出路径 usage 只折叠最终回复、丢重试调用的用量——`two_stage.py` :809（pre-stage2 取消）、:842（gate 短路）、:952（stage2 初始网络错误）、:986（post-stage2 取消）全部改用 `s1_usage_calls` 列表折叠 | `pa_agent/orchestrator/two_stage.py` 上述 4 处 | two_stage 相关测试（decision_nodes_orchestrator、qclaw_auto_fallback）全过，import smoke 过。注意 :627 处保持 `reply_s1.usage` 是正确的（该处在 `s1_usage_calls` 建立之前） |
+审查开始时的基线是 743 passed / 39 skipped / **6 failed**，e2e 4 个全部挂死（需强杀进程）。
 
-## 二、已修复（测试与工具链）
+## 二、这一轮修了什么
 
-| # | 修复 | 说明 |
-|---|------|------|
-| 7 | pytest-qt 安装 + Qt5/Qt6 DLL 冲突修复 | 安装 pytest-qt 4.5.0 后 PyQt6 导入报 `DLL load failed while importing QtCore`。根因：pytest-qt 自动探测绑定顺序先加载了 PyQt5，Qt5/Qt6 同进程共存冲突（本机 Anaconda 同时装有 PyQt5）。修复：新建 `tests/conftest.py` 设 `PYTEST_QT_API=pyqt6`（绑定探测惰性执行，conftest 时机来得及）。38 个 GUI 测试从 ERROR 恢复，抽测 28 个全过 |
-| 8 | 子代理遗留的 5 个测试文件收尾 | 两个测试同步子代理因 API 配额耗尽中途失败（限额 2026-09-10 重置），已改完 `test_price_tick.py`、`test_order_method_router.py`、`test_decision_nodes_judges.py`、`test_free_chat_keeps_reasoning_when_toggled.py`、`test_free_chat_resend_drops_reasoning.py` 的大部分；残留 1 个断言（`test_history_for_api_grows_with_turns` 消息数 5→6、索引+1）由我补齐。5 文件 75 个测试全过 |
+按严重程度分四批，每批一个独立分支、若干可回滚的提交。详细原因写在每个提交的正文里，
+这里只列结论与位置。
 
-## 三、未修复（测试同步，根因均已定位）
+### P0（10 项，分支 `fix/p0-audit-fixes`）
 
-以下 22 个失败全部是「产品代码 8 月有意变更 + 测试未同步」，非产品 bug。修法已在根因分析中验证，按清单逐项处理即可：
+1. **§1.3 闸门方向写反**：`trace_normalize._repair_gate_result` 把「是否极端混乱」判成 `answer=="否"`，
+   而 §1.3 的语义是回答「是」才阻断 —— 混乱时反而放行到下单路径。现改为 `== "是"`。
+2. **数据层收盘判定三处不一致**：A 股午休被当成已收盘（`bar_close_wait` 用 09:30-11:30/13:00-15:00
+   判 forming，而 `eastmoney_source` 用含午休的 `ashare_head_bar_live`）；tushare 分钟线缓存 TTL 恒定
+   1 小时且头一根永远 `closed=True`；周线算成「下周一 0 点收盘」。统一到 `ashare_is_forming_bar()`
+   与新的 `_bar_close_ms()`。
+3. **GUI 演示模式副作用**：演示回放会真的触发告警弹窗与追问线程；追问线程跨线程直接操作控件；
+   worker 取消被当成错误弹「程序异常」；`closeEvent` 漏停若干后台线程。
+4. **脱敏只覆盖 `provider.api_key`**：飞书 token、Tushare token、PushPlus token、追问落盘内容全部明文。
+   改为 `register_settings_secrets()` 统一登记 + `mask_known_secrets_in_text()` 供崩溃日志复用。
+5. **jsonschema 缺失时静默放行**：`pip install` 漏装依赖会变成「校验永远通过」。改为 fail-closed。
+6. **CI 只 `import pa_agent`**：新增真实跑测试；`pytest-timeout` 防挂死；pre-commit 正则重写。
 
-| 测试文件（失败数） | 根因 | 修法 |
-|---|---|---|
-| `tests/unit/test_decision_panel.py`（6） | `_prediction_group`/`_prediction_direction_label` 已移除，预测 UI 迁到 `gui/future_trend_panel.py:176-313` | 改测 FutureTrendPanel 接口 |
-| `tests/unit/test_trace_normalize.py`（5） | normalizer 有意不再清洗"不下单"残留字段（让校验器拒绝非法输出触发重试，`stage2_normalizer.py:1432-1443`，有新测试背书 `test_stage2_normalizer.py:983`） | fixture 改为完整合法的"不下单"载荷：schema（`prompts/schemas.py:363-383`）规定 9 个字段全 null |
-| `tests/integration/test_next_bar_prediction.py`（3） | (a) `enable_next_bar_prediction` 默认 False，关闭时 orchestrator 剥离该字段（`two_stage.py:1144-1146`）；(b) 同 decision_panel 属性移除 | (a) 测试构造 settings 时启用开关；(b) 同上改 FutureTrendPanel |
-| `tests/property/test_next_bar_prediction.py`（1） | normalizer:1062-1076 新增平局规则"保留模型方向选择"，与 argmax 性质断言冲突 | 性质测试排除全平局情形，或平局单独断言保留原值 |
-| `tests/property/test_snapshot_bijection.py`（1） | forming 判定新增挂钟检查 + forming bar 约定 seq=0（`snapshot.py:174/187`） | 测试传与 ts_open 匹配的 `now_ms`，断言 seq==0 |
-| `tests/property/test_logs_have_no_plaintext_key.py`（1） | **根因未明**：日志文件为空（明文泄漏断言本身通过，失败在"掩码必须出现"断言，content 为空串）。疑与 configure_logging handler/flush 有关，需先诊断 `pa_agent/util/logging.py` | 先诊断再定：产品 bug 则报 bug，测试时序问题则修测试 |
-| `tests/unit/test_market_defaults.py`（1） | 黄金符号按场所映射过滤 probe plan（`market_defaults.py:220-224`，SP/NYSE 等不报现货黄金被有意跳过） | 期望改为黄金可用 6 场所；可加 EURUSD 用例 |
-| `tests/unit/test_order_opportunity.py`（1） | 产品新增 `SND_ASYNC` flag，FakeWinsound stub 缺该常量，AttributeError 被吞 | stub 补 `SND_ASYNC = 8` |
-| ~~`tests/unit/test_provider_override_by_model.py`（1）~~ **该测试已随 Cursor 通道整体删除而删掉** | `apply_cursor_provider_to_settings` 重写为纯校验（`cursor_connector.py:68-89`），base_url 有意清空、不再走 QClaw 网关 | 重写为新语义：crsr_ key 校验、base_url=="" |
-| `tests/e2e/`（4 个 smoke） | 未深挖（疑似与上述 fixture/接口变更同类）。**注意：e2e 测试疑似挂起**，单文件跑 5 分钟无结果，可能与真实网络/mock 缺失有关，修之前先查挂起原因 | 先单独诊断挂起，再逐个对齐 |
+### P1（4 项，分支 `fix/p1-audit-fixes`）
 
-## 四、本轮修复后测试状态
+1. **§14 闸门子串启发式**：「未触发§14.1，但触发了追高禁止」会被判成清白。新的 `section14.py` 按从句
+   切分 + 否定前缀识别，无法判定时按违规处理。
+2. **不下单决策仍带三价**：`route_order_method` 遇到「不下单」只 `return []`，模型给的价格照旧留着，
+   `order_type` 还是「突破单」，决策仍能走到下单路径。改走 `clear_decision_to_no_order()`。
+   stage1 缺失也从「归一成 unknown 后全改不下单」改为直接早退（不要伪装成主动拒单）。
+3. **规范化层编造证据**：`follow_through` 取不到时硬写 `True`；`signal_bar` 可能被改写成帧里不存在的
+   序号；`stale` 被洗成 `pending`。
+4. **阶段二重试开关无效 + 客户端泄漏 + 全局请求锁串行 + 代理认证丢失 + 控制台闪烁**。
 
-`python -m pytest -m "not live"`：
-- **24 failed / 22+4(e2e) 见上表 / 649+ passed**（GUI 38 个从 ERROR 恢复为可运行，抽测全过；westock 新增 4 个）
-- e2e 4 个失败中包含挂起风险，跑全量时建议先排除：`python -m pytest -m "not live" --ignore=tests/e2e`
+### P2（工程债，分支 `chore/p2-p3-debt`）
 
-## 五、其他未做（原计划内）
+- 删除 6 个整模块零引用的死文件（`eastmoney_extended.py` 1336 行、`settings_dialog.py` 503 行等）与空包
+  `pa_agent/security/`；拆掉 `analysis_mode` 这个**从未存在**的字段（`getattr` 永远返回默认值，两种模式
+  从未被区分）。
+- `config/settings.example.json` 用 `Settings().model_dump()` 重新生成（原文件 8 处值与代码不符、缺 13 个
+  字段）；`config/README.md` 补齐 7 个顶层组与全部字段。新增 `tests/unit/test_settings_example_in_sync.py`
+  把模板、README、代码三者绑定。
+- 删除 37 个一次性调试脚本（19000 网关探针、厂商连通性测试、pending 统计），保留 6 个仍有用的并写
+  `tools/README.md`；`tools/dump_pa_stack.bat` 去掉写死的 `E:\PA_Agent` / `E:\anaconda3`，并修正
+  `python -m pyspy`（不存在的模块）为真实的 `py-spy` 可执行文件。
+- 依赖：`tvdatafeed` 补 commit pin；显式声明 `matplotlib`、`requests`；pytest 加 `--strict-markers`。
+- `ruff check --fix`（544 处）+ `black`（247 个文件）一次性对齐，作为独立提交，便于 `git blame --ignore-rev`。
 
-1. **ruff 配置**：`pyproject.toml` 加 `"RUF001","RUF002","RUF003"` 到 `[tool.ruff.lint] ignore`（中文标点歧义误报 3375 条），然后清理剩余真实 lint 项（46 个 F401 等）。未做。
-2. **产品层面复核项**（审阅发现，非阻塞）：metrics 强转发生在 §9.0 修复之前（`stage2_normalizer.py:1409` vs `:1416`），任何 metrics 失败会连带跳过 planned-limit 的 §9.0 升级——字段齐全时无影响，但"先修复再强转"更稳妥；A 股日线午休期间当日 bar 判"已收盘"是全项目统一行为（westock/akshare/bar_close_wait 一致），如要改应整体评估。
-3. **WeStock 小问题**（未修）：Windows 上 `npx.cmd` 超时后 node 子进程树可能残留；缓存三元组赋值无锁（低危）；港股时段用 9:30-16:00 连续近似。
-4. **8-01 清单遗留未修**：#17 的 `_stream_chat_resilient_impl` 降级成功时被吞掉调用的 usage 不计入；feishu token 刷新仍在锁内做 HTTP；eastmoney 1d 盘中单次快照仍拉 2 次盘口。
+### P3（过程中的小问题）
 
-## 六、恢复入口
+- `closeEvent` 未调用决策树可视化面板的 `shutdown()`，三个 QTimer 会在场景销毁后继续 tick。
+- `tests/e2e` 曾全部挂死：根因是 `show_validation_debug_dialog` 的模态框阻塞 `qtbot.waitUntil`；
+  而 4 个用例本身还依赖 `ctx.settings`（默认 `None`）与 `ctx.data_source`（默认 `None`）。
 
-1. 测试同步按第三节表格逐项修（TP2 fixture 模式参考 `test_stage2_normalizer.py:436/507/570/671`；free_chat 新前缀布局为 `[system, user-ref, assistant-recall, ...]`，索引整体 +1，已修好的两个文件可作参照）。
-2. API 配额 2026-09-10 重置后可再派子代理并行处理剩余测试文件（互不重叠的文件集）。
-3. 每修完一个文件跑：`python -m pytest <file> -q -p no:cacheprovider`；全部修完后跑 `python -m pytest -m "not live" --ignore=tests/e2e` 验收，e2e 单独诊断挂起问题。
+## 三、没做 / 已知遗留
 
-## 七、修改文件清单（本轮）
+1. **ruff 剩余 198 条**未清理：都是需要逐条判断语义的（E402 延迟导入是刻意的循环依赖规避、SIM102
+   合并 if 会改变可读性）。CI 里该步骤仍是 `continue-on-error: true`（advisory）。
+2. **`pa_agent/records/pending_writer` 的历史 pending 归一化**会把 `stale` 洗成 `pending`，未动。
+3. **`decision_nodes` 的若干 `return []` 早退**只修了会改变下单结论的那几处，其余保留。
+4. **`docs/REPAIR_PLAN.md`、`docs/WESTOCK_INTEGRATION_PLAN.md`** 是历史计划书，未随本轮同步。
+5. **`analysis_mode`** 现在是一个显式 no-op：`two_stage.py` 里 `analysis_mode = "original"` 并附注释。
+   若要真的做两种模式，需要先在 `GeneralSettings` 里加字段，再补分支。
 
-产品代码：
-- `pa_agent/gui/decision_panel.py`（修复 #1）
-- `pa_agent/data/westock_source.py`（修复 #2）
-- `pa_agent/gui/main_window.py`（修复 #3）
-- `pa_agent/ai/trace_normalize.py`（修复 #4）
-- `pa_agent/data/tushare_source.py`（修复 #5）
-- `pa_agent/orchestrator/two_stage.py`（修复 #6，4 处）
+## 四、恢复入口
 
-测试/工具链：
-- `tests/conftest.py`（新建，PYTEST_QT_API=pyqt6）
-- `tests/unit/test_westock_source.py`（新增 4 个 forming 测试）
-- `tests/unit/test_free_chat_resend_drops_reasoning.py`（补齐子代理遗留的 1 个断言）
+```cmd
+git switch chore/p2-p3-debt
+E:\anaconda3\python.exe -m pytest -m "not live" --ignore=tests/e2e --timeout=300
+E:\anaconda3\python.exe -m pytest tests/e2e
+```
 
-依赖：环境新增 `pytest-qt==4.5.0`（dev 依赖本就声明，此前未装）。
+- 改 GUI 相关代码：先跑 `tests/unit/test_tv_probe_nonblocking.py`、`test_gui_state_and_busy.py`、
+  `test_decision_flow_animation.py`，这三个覆盖了本轮 GUI 修复的全部回归点。
+- 改数据层收盘/缓存逻辑：`tests/unit/test_bar_close_wait.py`、`test_ashare_trading_calendar.py`、
+  `test_tushare_source.py`。
+- 改校验/规范化：`test_section14_gate.py`、`test_no_order_helper.py`、`test_validation_lenient_fixes.py`。
+- 调试挂死：`tools/dump_pa_stack.bat`（窗口卡死时转储线程栈）或 pytest 的 `faulthandler`。
+- 提交前：`black pa_agent tests tools` + `ruff check`，勿新增 lint 项。
+
+## 五、约定（详见 `CONTRIBUTING.md`）
+
+- 分支：功能 `dev/…`、修 bug `fix/…`、清理 `chore/…`；提交信息中文 + 前缀（`修复:` / `样式:` / `文档:`）。
+- 临时文件一律 `.tmp-` 前缀，任务结束清理（`.gitignore` 已忽略 `/.tmp-*`）。
+- 不要在提交里混入 `config/settings.json`、`logs/`、`records/`。

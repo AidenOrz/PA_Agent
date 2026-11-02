@@ -20,11 +20,16 @@
 ## 提交代码前
 
 ```cmd
-pytest -m "not e2e"
-ruff check pa_agent tests
+pytest -m "not live" --ignore=tests/e2e
+black pa_agent tests tools
+ruff check pa_agent tests tools
 ```
 
-（若已安装 `black`，可按团队习惯格式化。）
+- `-m "not live"`：排除需要真实 API Key 的用例；`--ignore=tests/e2e`：e2e 会驱动 Qt 事件循环，请单独跑
+  `pytest tests/e2e`。
+- 每次提交前请跑一遍 `black`：仓库已统一为 black 格式（100 列），CI 不检查格式，混入未格式化的改动
+  会让后续 diff 里夹带大量无关换行。
+- `ruff check` 目前仍有约 200 条需要人工判断的历史问题（延迟导入、可合并 if 等），新代码请勿新增。
 
 ## 请勿提交
 
@@ -32,11 +37,13 @@ ruff check pa_agent tests
 - `logs/`、`records/pending/`、`experience/` 下的运行数据
 - 任何 API Key、`.env`、私钥文件
 
-启用本地 pre-commit 钩子：
+启用本地 pre-commit 钩子（提交前拦截明文密钥）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\setup_git_secrets.ps1
 ```
+
+钩子脚本在 `.githooks/pre-commit`，会拦截 `api_key`、`sk-`、`Bearer`、`/hook/` 等形态的明文；夹具与占位符（`tests/`、`docs/`、`*.example.*`）会被跳过。
 
 ## Pull Request 建议
 

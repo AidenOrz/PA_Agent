@@ -59,6 +59,27 @@ python -m pa_agent.main
 
 ## 更新日志
 
+### 2026-11-02
+
+**修复（全面审查后的 P0/P1）**
+
+- 🔴 §1.3「极端混乱闸门」方向写反：混乱时反而放行到下单路径
+- 🔴 §14 禁止行为闸门用子串匹配，「未触发§14.1，但触发了追高禁止」会被判成清白
+- 🔴 「不下单」决策仍保留模型给的三价、`order_type` 仍是突破单，决策会走到下单路径
+- 🔴 A 股午休被当成已收盘、tushare 分钟线 1 小时不刷新、周线到下周一才收盘
+- 🔴 jsonschema 未安装时校验静默放行（fail-open）
+- 🔴 脱敏只覆盖 `provider.api_key`：飞书/Tushare/PushPlus token 与追问落盘曾明文
+- 🟠 阶段二重试开关无效、LLM 客户端连接泄漏、全局请求锁串行化、TradingView 代理认证丢失
+- 🟠 演示模式触发真实告警、追问线程跨线程操作控件、worker 取消被当成崩溃弹窗
+
+**工程**
+
+- CI 从「只 `import pa_agent`」改为真实跑测试；pytest 加 `--timeout` 与 `--strict-markers`
+- 删除 6 个零引用死模块（含 1336 行的 `eastmoney_extended.py`）与 37 个一次性调试脚本
+- `config/settings.example.json` 与 `config/README.md` 对齐代码默认值，并加测试防止再次漂移
+- ruff 安全自动修复 544 处 + black 全仓格式化；`tools/README.md` 说明保留脚本用途
+- 测试：743 passed / 6 failed / e2e 全挂死 → **864 passed / 0 failed**，e2e 4 passed
+
 ### 2026-09-05
 
 **修复**
