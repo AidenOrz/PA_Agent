@@ -4546,6 +4546,14 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             logger.warning("Shutdown cleanup skipped: %s", exc)
         try:
+            # 决策树可视化自己的三个定时器（特效/播放/重排）不属于上面的刷新循环，
+            # 不显式停掉就会在场景被销毁后继续 tick。
+            flow_viz = getattr(self, "_decision_flow_viz_panel", None)
+            if flow_viz is not None:
+                flow_viz.shutdown()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Decision flow panel shutdown failed: %s", exc)
+        try:
             self._reap_zombie_probe_workers()
         except Exception as exc:  # pragma: no cover - 防御性清理
             logger.debug("Probe worker reaping skipped: %s", exc)

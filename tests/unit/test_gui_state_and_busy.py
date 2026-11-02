@@ -244,3 +244,19 @@ def test_incremental_label_uses_busy_flag_not_button_state(qtbot) -> None:
 
     assert window._submit_btn.text() == "提交分析"
     assert window._incremental_available is False
+
+
+def test_close_event_shuts_down_decision_flow_panel(qtbot) -> None:
+    """关闭窗口必须停掉决策树可视化的定时器。
+
+    _FlowScene 的特效、播放、重排三个定时器都挂在 panel 上，父窗口关闭后
+    它们仍会继续 tick，回调打到正在销毁的场景上。此前 closeEvent 只停了
+    刷新循环与 worker，没有通知 panel。
+    """
+    window = _make_window(qtbot)
+    panel = window._decision_flow_viz_panel
+    panel.shutdown = MagicMock()
+
+    window.close()
+
+    assert panel.shutdown.call_count == 1
