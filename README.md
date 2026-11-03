@@ -3,13 +3,14 @@
 
 ---
 
-面向主观交易者的 **价格行为（Price Action）** AI 辅助决策工具。从 **MT5 / TradingView / WeStock / yfinance / AkShare** 读取 K 线，将结构化 K 线数据与预计算特征送入大模型做**两阶段分析**（市场诊断 → 交易决策），**不是**截图识图，**不连接券商、不执行下单**。
+面向主观交易者的 **价格行为（Price Action）** AI 辅助决策工具。从 **MT5 / TradingView / Baostock / WeStock / Binance / yfinance / AkShare** 读取 K 线，将结构化 K 线数据与预计算特征送入大模型做**两阶段分析**（市场诊断 → 交易决策），**不是**截图识图，**不连接券商、不执行下单**。
 
 ---
 
 ## 主要功能
 
-- 📈 **多数据源**：MT5（Windows）、TradingView（全平台）、WeStock（A 股/港股/美股，需 Node.js ≥ 18）、yfinance（期货/加密货币）、AkShare（A 股）
+- 📈 **多数据源**：MT5（Windows）、TradingView（全平台）、Baostock（A 股，免费免 Key）、WeStock（A 股/港股/美股，需 Node.js ≥ 18）、Binance（加密货币现货，公开 REST）、yfinance（期货/加密货币）、AkShare（A 股）
+- 🧩 **统一数据源注册表**：新增数据源只需在 `pa_agent/data/sources_registry.py` 登记一行；A 股类数据源（含 Baostock / WeStock）共用一个「国内数据源」列表，GUI 下拉、刷新节流、品种占位提示、默认周期都由注册表驱动
 - 🧠 **两阶段 AI 分析**：市场诊断 → 策略路由 → 交易决策（限价/突破/市价或不下单）
 - 🔄 **增量分析与持续跟踪**：新增 K 线时复用上次结论；开启 `keep_analysis` 后新 K 线收盘自动触发新一轮分析
 - 🌳 **决策树可视化**：赛博科幻风格可交互流程图，自动播放闸门→策略路径动画
@@ -27,7 +28,7 @@
 | -------- | ----------------------------------------------------------------------- |
 | 操作系统 | Windows 10 / 11（主支持）、macOS 12+（TradingView 数据源）              |
 | Python   | 3.11+                                                                    |
-| 数据源   | MT5 / TradingView / WeStock / yfinance / AkShare **至少配置一种**（WeStock 需额外安装 Node.js ≥ 18） |
+| 数据源   | MT5 / TradingView / Baostock / WeStock / Binance / yfinance / AkShare **至少配置一种**（WeStock 需额外安装 Node.js ≥ 18；Binance 在国内需代理） |
 | 网络     | 可访问所配置的 AI API（如 DeepSeek、PackyAPI 等）                        |
 
 ---

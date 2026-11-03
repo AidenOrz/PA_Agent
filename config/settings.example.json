@@ -16,6 +16,7 @@
     "kline_adjust": "qfq",
     "last_tradingview_exchange": "",
     "tradingview_proxy": "",
+    "binance_proxy": "",
     "last_symbol": "XAUUSDm",
     "last_timeframe": "15m",
     "decision_flow_auto_play": true,

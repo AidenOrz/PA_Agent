@@ -8,7 +8,7 @@
 
 | 项目 | 结果 | 命令 |
 |------|------|------|
-| 非 live 测试 | **866 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
+| 非 live 测试 | **915 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
 | e2e smoke | **4 passed**（无挂起） | `python -m pytest tests/e2e` |
 | ruff | 198 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
 | black | 全部通过 | `python -m black --check pa_agent tests tools` |
@@ -16,6 +16,22 @@
 | 规模 | 133 个源文件 / 135 个测试文件（其中 122 个 `test_*.py`）/ 139 次提交 | — |
 
 审查开始时的基线是 743 passed / 39 skipped / **6 failed**，e2e 4 个全部挂死（需强杀进程）。
+
+### 新增数据源（分支 `dev/data-sources-baostock-binance`）
+
+1. **统一数据源注册表** `pa_agent/data/sources_registry.py`：清单原本散在 factory（3 处）、settings（第二份
+   Literal）、market_defaults（1 处元组）、main_window（2 处元组、1 处周期回落分支）共 7 处，现在全部查注册表。
+2. **国内数据源共用列表** `DOMESTIC_A_SHARE_KINDS = ("baostock","westock","akshare","eastmoney","tushare")`，
+   由 `SourceSpec.domestic` 派生。WeStock 算国内源（原生接受 6 位代码）；TradingView 只算「能覆盖」不算国内源，
+   否则黄金/加密品种会被改写成 6 位代码。
+3. **Baostock 数据源** `baostock_source.py`：复用已有 `_BaostockSession`（同一个锁/登录/socket），周期
+   1d/1w/1M/5m/15m/30m/1h（4h 由 1h 重采样），周线按 ISO 周、月线按自然月判未完成（Baostock 的周/月线
+   时间戳是「周内最后一个交易日」/「月末交易日」，按日期相等判断会永远当成已收盘）。
+4. **Binance 数据源** `binance_source.py`：公开 REST `GET /api/v3/klines`，无需 Key；symbol 归一
+   （`btc/usdt`、`BTCUSDT.P` 等），只有最后一根可能是未完成 K 线；代理优先级 `binance_proxy` →
+   `tradingview_proxy` → 自动探测。
+5. **`proxy_env.py`**：把 TradingView 里的代理探测（手动/环境变量/系统注册表/常见端口）抽成共用模块，
+   TradingView 的静态方法改为一行转发（对外签名不变，原有测试不需要改）。
 
 ## 二、这一轮修了什么
 
@@ -112,6 +128,8 @@ git clone --depth 1 file:///E:/PA_Agent .tmp-cleancheck && cd .tmp-cleancheck &&
   `test_decision_flow_animation.py`，这三个覆盖了本轮 GUI 修复的全部回归点。
 - 改数据层收盘/缓存逻辑：`tests/unit/test_bar_close_wait.py`、`test_ashare_trading_calendar.py`、
   `test_tushare_source.py`。
+- 改数据源清单/新增数据源：`tests/unit/test_sources_registry.py`（注册表不变量）、`test_baostock_source.py`、
+  `test_binance_source.py`；说明见 `docs/数据源注册表与新数据源.md`。
 - 改校验/规范化：`test_section14_gate.py`、`test_no_order_helper.py`、`test_validation_lenient_fixes.py`。
 - 调试挂死：`tools/dump_pa_stack.bat`（窗口卡死时转储线程栈）或 pytest 的 `faulthandler`。
 - 提交前：`black pa_agent tests tools` + `ruff check`，勿新增 lint 项。

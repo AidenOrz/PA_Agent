@@ -152,6 +152,8 @@ def test_clear_stops_animation_timer(qtbot) -> None:
     panel.clear()
 
     assert panel._fx_timer.isActive() is False
+
+
 def test_paint_survives_scene_cleared_underneath(qtbot) -> None:
     """场景被清空后仍有排队重绘时，paint() 不得抛 RuntimeError。
 

@@ -1,46 +1,23 @@
-"""Construct :class:`DataSource` implementations by kind id."""
+"""Construct DataSource implementations by kind id."""
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pa_agent.data.base import DataSource
-from pa_agent.data.market_defaults import (
-    A_SHARE_DEFAULT_SYMBOL,
-    GOLD_MT5_SYMBOL,
-    GOLD_TV_SYMBOL,
+from pa_agent.data.sources_registry import ALL_KINDS as _ALL_KINDS
+from pa_agent.data.sources_registry import (
+    HIDDEN_KINDS,
+    SOURCE_SPECS,
+    DataSourceKind,
+    source_spec,
 )
 
-DataSourceKind = Literal[
-    "mt5",
-    "tradingview",
-    "westock",
-    "akshare",
-    "eastmoney",
-    "tushare",
-    "yfinance",
-]
-
-# UI-visible sources only — ``eastmoney`` is config/programmatic, not listed here.
-DATA_SOURCE_CHOICES: tuple[tuple[DataSourceKind, str], ...] = (
-    ("mt5", "MT5"),
-    ("tradingview", "TradingView"),
-    ("westock", "WeStock"),
+#: (kind, label) pairs shown in the data-source combo box.
+DATA_SOURCE_CHOICES: tuple[tuple[DataSourceKind, str], ...] = tuple(
+    (spec.kind, spec.label) for spec in SOURCE_SPECS if spec.ui_visible
 )
 
-_HIDDEN_KINDS: frozenset[DataSourceKind] = frozenset(
-    {"akshare", "eastmoney", "tushare", "yfinance"}
-)
-
-_DEFAULT_SYMBOLS: dict[DataSourceKind, str] = {
-    "mt5": GOLD_MT5_SYMBOL,
-    "tradingview": GOLD_TV_SYMBOL,
-    "westock": A_SHARE_DEFAULT_SYMBOL,
-    "akshare": A_SHARE_DEFAULT_SYMBOL,
-    "eastmoney": A_SHARE_DEFAULT_SYMBOL,
-    "tushare": A_SHARE_DEFAULT_SYMBOL,
-    "yfinance": "GC=F",
-}
+# UI-visible sources only — ``eastmoney`` is config/programmatic, not listed.
+_HIDDEN_KINDS: frozenset[DataSourceKind] = HIDDEN_KINDS  # type: ignore[assignment]
 
 
 def default_tradingview_exchange() -> str:
@@ -50,8 +27,7 @@ def default_tradingview_exchange() -> str:
 
 def normalize_data_source_kind(kind: str | None) -> DataSourceKind:
     """Return a supported data-source kind, defaulting to MT5."""
-    supported = {k for k, _ in DATA_SOURCE_CHOICES} | _HIDDEN_KINDS
-    if kind in supported:
+    if kind in _ALL_KINDS:
         return kind  # type: ignore[return-value]
     return "mt5"
 
@@ -59,30 +35,22 @@ def normalize_data_source_kind(kind: str | None) -> DataSourceKind:
 def data_source_label(kind: str | None) -> str:
     """Human-readable label for *kind*."""
     normalized = normalize_data_source_kind(kind)
-    for key, label in DATA_SOURCE_CHOICES:
-        if key == normalized:
-            return label
-    if normalized == "eastmoney":
-        return "东方财富"
-    if normalized == "tushare":
-        return "Tushare(A股)"
-    if normalized == "akshare":
-        return "AkShare"
-    if normalized == "yfinance":
-        return "YFinance"
-    return "MT5"
+    spec = source_spec(normalized)
+    return spec.label if spec is not None else "MT5"
 
 
 def default_symbol_for_kind(kind: str | None) -> str:
-    return _DEFAULT_SYMBOLS[normalize_data_source_kind(kind)]
+    spec = source_spec(normalize_data_source_kind(kind))
+    return spec.default_symbol if spec is not None else "XAUUSDm"
 
 
 def create_data_source(kind: str | None) -> DataSource:
     """Instantiate a fresh data source for *kind* (not connected)."""
+    from pa_agent.config.paths import SETTINGS_JSON_PATH
+    from pa_agent.config.settings import load_settings
+
     normalized = normalize_data_source_kind(kind)
     if normalized == "tradingview":
-        from pa_agent.config.paths import SETTINGS_JSON_PATH
-        from pa_agent.config.settings import load_settings
         from pa_agent.data.tradingview import TradingViewSource
 
         settings = load_settings(SETTINGS_JSON_PATH)
@@ -93,13 +61,25 @@ def create_data_source(kind: str | None) -> DataSource:
         from pa_agent.data.westock_source import WeStockSource
 
         return WeStockSource()
+    if normalized == "binance":
+        from pa_agent.data.binance_source import BinanceSource
+
+        # Binance falls back to the TradingView proxy, then auto-detection, so
+        # a user who already configured one proxy does not configure it twice.
+        settings = load_settings(SETTINGS_JSON_PATH)
+        proxy = str(getattr(settings.general, "binance_proxy", "") or "").strip()
+        if not proxy:
+            proxy = str(getattr(settings.general, "tradingview_proxy", "") or "").strip()
+        return BinanceSource(proxy_override=proxy)
+    if normalized == "baostock":
+        from pa_agent.data.baostock_source import BaostockSource
+
+        return BaostockSource()
     if normalized == "eastmoney":
         from pa_agent.data.eastmoney_source import EastMoneySource
 
         return EastMoneySource()
     if normalized == "tushare":
-        from pa_agent.config.paths import SETTINGS_JSON_PATH
-        from pa_agent.config.settings import load_settings
         from pa_agent.data.tushare_source import TushareSource
 
         return TushareSource(settings=load_settings(SETTINGS_JSON_PATH))

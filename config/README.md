@@ -44,9 +44,10 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `general.last_data_source` | string | `"mt5"` | K 线数据来源：`mt5` / `tradingview`（GUI 下拉选项）；`akshare` / `yfinance`（仅代码支持） |
+| `general.last_data_source` | string | `"mt5"` | K 线数据来源。GUI 下拉：`mt5` / `tradingview` / `baostock` / `westock` / `binance`；仅配置可用：`akshare` / `eastmoney` / `tushare` / `yfinance` |
 | `general.last_tradingview_exchange` | string | `""` | TradingView 交易所。空字符串 =（自动）依次探测预设列表。如 `OANDA`、`SSE`、`HKEX` 等 |
 | `general.tradingview_proxy` | string | `""` | TradingView WebSocket 代理地址（如 `http://127.0.0.1:7890`）。空字符串 = 自动探测（环境变量 → 系统代理 → 常见本地端口） |
+| `general.binance_proxy` | string | `""` | Binance REST 代理地址。空字符串 = 沿用 `tradingview_proxy`，两者都空才自动探测 |
 | `general.kline_adjust` | string | `"qfq"` | 东财/宝硕等 A 股数据源的复权方式：`qfq`（前复权）/ `hfq`（后复权）/ `none` |
 | `general.last_symbol` | string | `"XAUUSDm"` | 默认品种。MT5 需含后缀（如 `m`），TradingView 用标准名（如 `XAUUSD`） |
 | `general.last_timeframe` | string | `"15m"` | 默认周期，如 `1m`、`5m`、`15m`、`1h`、`4h`、`1d` |

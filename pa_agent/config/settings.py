@@ -16,7 +16,17 @@ from typing import ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 DecisionStance = Literal["conservative", "balanced", "aggressive", "extreme_aggressive"]
-DataSourceKind = Literal["mt5", "tradingview", "westock", "akshare", "eastmoney", "tushare"]
+DataSourceKind = Literal[
+    "mt5",
+    "tradingview",
+    "westock",
+    "akshare",
+    "eastmoney",
+    "tushare",
+    "yfinance",
+    "baostock",
+    "binance",
+]
 NormalizationMode = Literal["strict", "lenient"]
 
 
@@ -85,6 +95,8 @@ class GeneralSettings(BaseModel):
     #: TradingView WebSocket 代理地址（如 http://127.0.0.1:7890）；
     #: 空字符串 = 自动探测（环境变量 → 系统代理 → 常见本地端口）
     tradingview_proxy: str = ""
+    #: 币安 REST 代理地址；空字符串 = 沿用 tradingview_proxy，再空则自动探测
+    binance_proxy: str = ""
     last_symbol: str = "XAUUSDm"
     last_timeframe: str = "15m"
     decision_flow_auto_play: bool = True
@@ -116,17 +128,19 @@ class GeneralSettings(BaseModel):
     @field_validator("last_data_source", mode="before")
     @classmethod
     def _coerce_legacy_data_source(cls, v: object) -> object:
-        if v == "yfinance":
-            return "mt5"
-        if v in ("adata", "a_share"):
+        """Map retired kind ids onto current ones.
+
+        Every supported kind only needs the identity path, so the list is
+        derived instead of restated; the old ``adata``/``a_share`` spellings
+        still map to AkShare and an unknown value falls back to MT5 rather
+        than raising (a hand-edited settings.json must not brick startup).
+        """
+        text = str(v or "").strip()
+        if text in ("adata", "a_share"):
             return "akshare"
-        if v == "eastmoney":
-            return "eastmoney"
-        if v == "tushare":
-            return "tushare"
-        if v == "westock":
-            return "westock"
-        return v
+        from pa_agent.data.sources_registry import ALL_KINDS
+
+        return text if text in ALL_KINDS else "mt5"
 
     @field_validator("decision_flow_default_zoom_pct", mode="before")
     @classmethod

@@ -6,7 +6,6 @@ import logging
 import os
 import threading
 import time
-import urllib.parse
 
 from pa_agent.data.base import (
     DataSource,
@@ -20,6 +19,13 @@ from pa_agent.data.market_defaults import (
     resolve_tv_fetch_pair,
     sanitize_tv_exchange_for_symbol,
     tv_auto_probe_plan,
+)
+from pa_agent.data.proxy_env import (
+    detect_proxy,
+    parse_proxy_server,
+    proxy_auth_tuple,
+    proxy_url_for_server,
+    tcp_open,
 )
 from pa_agent.data.tradingview_errors import format_tradingview_fetch_error
 from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError
@@ -232,150 +238,30 @@ class TradingViewSource(DataSource):
 
     @staticmethod
     def _proxy_auth_tuple(proxy_url: str) -> tuple[str, str] | None:
-        """从代理 URL 里取 ``(user, password)``；没有认证信息返回 None。
-
-        ``http://user:pass@host:port`` 形式的代理需要把凭据单独交给
-        websocket-client（``http_proxy_auth``），否则请求会静默 407。
-        用户名/密码按 URL 规则先做百分号解码（密码里常有 ``@`` / ``:``）。
-        """
-        try:
-            parsed = urllib.parse.urlparse(proxy_url or "")
-        except ValueError:
-            return None
-        if not parsed.username:
-            return None
-        user = urllib.parse.unquote(parsed.username)
-        password = urllib.parse.unquote(parsed.password or "")
-        return user, password
+        """代理 URL 里的 ``(user, password)``；实现在 ``proxy_env``。"""
+        return proxy_auth_tuple(proxy_url)
 
     @staticmethod
     def _detect_proxy(override: str = "") -> tuple[str, str, int, str] | None:
-        """Return (proxy_url, host, port, source) of the best available proxy.
+        """``(proxy_url, host, port, source)``；实现在 ``proxy_env``。
 
-        A non-empty *override* (e.g. from the settings UI) wins over every
-        auto-detection method. Auto-detect order: env vars → Windows system
-        proxy → common local ports.
+        手动覆盖 > 环境变量 > Windows 系统代理 > 常见本地端口。
         """
-        # 0. Manual override from the settings UI (highest priority)
-        raw = (override or "").strip()
-        if raw:
-            normalized = raw if "://" in raw else f"http://{raw}"
-            parsed = urllib.parse.urlparse(normalized)
-            if parsed.hostname:
-                port = parsed.port or (443 if parsed.scheme == "https" else 80)
-                return normalized, parsed.hostname, port, "manual"
-            logger.warning("手动代理地址无效（忽略并回退自动探测）：%r", raw)
-
-        # 1. Environment variables
-        for key in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
-            raw = os.environ.get(key, "").strip()
-            if raw:
-                normalized = raw if "://" in raw else f"http://{raw}"
-                parsed = urllib.parse.urlparse(normalized)
-                if parsed.hostname:
-                    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-                    # 归一化后返回：``user:pass@host:port`` 缺协议时也要带上 scheme，
-                    # 否则调用方无法从中解析出代理认证信息。
-                    return normalized, parsed.hostname, port, "env"
-
-        # 2. Windows system proxy (registry) — GUI-launched apps inherit this
-        # even when env vars are absent.
-        try:
-            import winreg  # Windows only
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
-            ) as key:
-                enable_val, _ = winreg.QueryValueEx(key, "ProxyEnable")
-                if enable_val:
-                    server, _ = winreg.QueryValueEx(key, "ProxyServer")
-                    if server:
-                        host, port = TradingViewSource._parse_proxy_server(server)
-                        proxy_url = TradingViewSource._proxy_url_for_server(server)
-                        if host and port and proxy_url:
-                            return proxy_url, host, port, "registry"
-        except Exception:
-            pass
-
-        # 3. Common local proxy ports (Clash / V2Ray / Shadowsocks)
-        for port in (7890, 10808, 1080, 10809, 7897, 8888, 8080):
-            if TradingViewSource._tcp_open("127.0.0.1", port):
-                return f"http://127.0.0.1:{port}", "127.0.0.1", port, "port-probe"
-
-        return None
+        return detect_proxy(override)
 
     @staticmethod
     def _parse_proxy_server(server: str) -> tuple[str, int] | None:
-        """Parse a Windows ProxyServer value.
-
-        Accepts ``host:port`` or ``http=host:port;https=host:port`` style.
-        Prefers the https entry (WebSocket is wss://).
-        """
-        text = (server or "").strip()
-        if not text:
-            return None
-        https_part = ""
-        for part in text.split(";"):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" in part:
-                scheme, addr = part.split("=", 1)
-                if scheme.strip().lower() == "https" and addr.strip():
-                    https_part = addr.strip()
-            elif not https_part:
-                https_part = part
-        if not https_part:
-            return None
-        parsed = urllib.parse.urlparse(
-            https_part if "://" in https_part else f"http://{https_part}"
-        )
-        if not parsed.hostname:
-            return None
-        port = parsed.port or 80
-        return parsed.hostname, port
+        """解析 Windows ``ProxyServer`` 值；实现在 ``proxy_env``。"""
+        return parse_proxy_server(server)
 
     @staticmethod
     def _proxy_url_for_server(server: str) -> str:
-        """Windows ``ProxyServer`` 值 -> 带 host:port 的代理 URL（保留认证信息）。
-
-        ``http=user:pass@host:port;https=user:pass@host:port`` 这种形式里，
-        认证信息只写在条目里；重建 URL 时不能丢掉，否则需要认证的代理会 407。
-        """
-        text = (server or "").strip()
-        if not text:
-            return ""
-        entry = ""
-        plain = ""
-        for part in text.split(";"):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" in part:
-                scheme, addr = part.split("=", 1)
-                if scheme.strip().lower() == "https" and addr.strip():
-                    entry = addr.strip()
-            elif not plain:
-                plain = part
-        chosen = entry or plain
-        if not chosen:
-            return ""
-        return chosen if "://" in chosen else f"http://{chosen}"
+        """Windows ``ProxyServer`` 值转代理 URL（保留认证信息）。"""
+        return proxy_url_for_server(server)
 
     @staticmethod
     def _tcp_open(host: str, port: int, timeout: float = 0.5) -> bool:
-        import socket
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
-        try:
-            s.connect((host, port))
-            return True
-        except Exception:
-            return False
-        finally:
-            s.close()
+        return tcp_open(host, port, timeout)
 
     def _restore_ws_proxy(self) -> None:
         if self._orig_create_connection is None:

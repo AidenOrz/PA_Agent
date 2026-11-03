@@ -102,13 +102,24 @@ def is_likely_crypto_symbol(symbol: str) -> bool:
 def normalize_gold_symbol_for_kind(kind: str, symbol: str) -> str:
     """Map crypto / MT5-style names to gold defaults for *kind*."""
     from pa_agent.data.ashare_common import normalize_ashare_symbol
+    from pa_agent.data.sources_registry import is_domestic_a_share
 
     sym = (symbol or "").strip()
-    if kind in ("akshare", "eastmoney", "tushare", "westock"):
+    if is_domestic_a_share(kind):
         code = normalize_ashare_symbol(sym)
         if not code or not _looks_like_ashare_code(code):
             return A_SHARE_DEFAULT_SYMBOL
         return code
+    if kind == "binance":
+        # A crypto source keeps crypto symbols: the gold fallback below would
+        # rewrite BTCUSDT into XAUUSDm and the pair would never subscribe.
+        from pa_agent.data.binance_source import (
+            is_binance_pair,
+            normalize_binance_symbol,
+        )
+
+        pair = normalize_binance_symbol(sym)
+        return pair if is_binance_pair(pair) else "BTCUSDT"
     if kind == "tradingview":
         code = normalize_ashare_tv_code(sym)
         if _is_ashare_tv_code(code):

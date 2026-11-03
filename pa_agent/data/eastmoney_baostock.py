@@ -196,6 +196,14 @@ class _BaostockSession:
         cls._logged_in = False
 
 
+# Public aliases: the standalone Baostock data source reuses the same
+# session/lock/retry machinery instead of opening a second socket.
+BaostockSession = _BaostockSession
+baostock_code = _baostock_code
+collect_baostock_rows = _collect_baostock_rows
+calendar_days_for_bars = _calendar_days_for_bars
+
+
 def fetch_daily_history_baostock(symbol: str, n: int) -> list[dict[str, Any]]:
     """Daily OHLCV fallback when East Money HTTP is unstable."""
     if is_index_symbol(symbol):

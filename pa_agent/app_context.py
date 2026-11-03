@@ -72,16 +72,18 @@ class AppContext:
         from pa_agent.data.kline_adjust import apply_kline_adjust_from_settings
 
         apply_kline_adjust_from_settings(settings)
+        from pa_agent.data.sources_registry import source_default_timeframe
+
         ds_kind = normalize_data_source_kind(getattr(settings.general, "last_data_source", "mt5"))
         data_source = create_data_source(ds_kind)
 
-        # WeStock exposes calendar periods rather than the intraday periods
-        # used by MT5/TradingView.  Normalize a stale cross-source setting
-        # before the initial subscription so the source starts usable.
-        if ds_kind == "westock":
-            supported = set(data_source.supported_timeframes())
-            if settings.general.last_timeframe not in supported:
-                settings.general.last_timeframe = "1d"
+        # Sources do not share one timeframe vocabulary (WeStock only speaks
+        # calendar periods, Baostock has no 1m, Binance has no 3M). Normalize a
+        # stale cross-source setting before the initial subscription so the
+        # source starts usable instead of failing every refresh tick.
+        supported_timeframes = set(data_source.supported_timeframes())
+        if supported_timeframes and settings.general.last_timeframe not in supported_timeframes:
+            settings.general.last_timeframe = source_default_timeframe(ds_kind, "1d")
 
         # Subscribe to the last-used symbol/timeframe from settings
         try:

@@ -529,10 +529,16 @@ class MainWindow(QMainWindow):
         if ds_index >= 0:
             self._data_source_combo.setCurrentIndex(ds_index)
         self._data_source_combo.setMinimumWidth(108)
-        self._data_source_combo.setToolTip(
-            "K 线数据来源：MT5（需终端登录）、TradingView（tvDatafeed）、"
-            "WeStock（Node.js/npx CLI，需网络）；本地数据源按当前配置提供"
-        )
+        # Tooltip text comes from the registry so a new source is described
+        # where it is registered instead of in a second hard-coded string.
+        from pa_agent.data.sources_registry import SOURCE_SPECS
+
+        _tips = [
+            f"· {spec.label}：{spec.tooltip}"
+            for spec in SOURCE_SPECS
+            if spec.ui_visible and spec.tooltip
+        ]
+        self._data_source_combo.setToolTip("K 线数据来源\n" + "\n".join(_tips))
         self._data_source_combo.currentIndexChanged.connect(self._on_data_source_combo_changed)
         ctrl_layout.addWidget(self._data_source_combo)
 
@@ -825,11 +831,11 @@ class MainWindow(QMainWindow):
         if settings is not None:
             interval_ms = getattr(settings.general, "refresh_interval_ms", 1000)
             n_bars = self._analysis_bar_count()
-        if (
-            self._current_data_source_kind() in ("akshare", "eastmoney", "tushare")
-            and interval_ms < 2500
-        ):
-            interval_ms = 2500
+        # HTTP feeds throttle bursts; the registry knows which ones and by how
+        # much, so adding a source does not mean editing this method.
+        from pa_agent.data.sources_registry import min_refresh_interval_ms
+
+        interval_ms = min_refresh_interval_ms(self._current_data_source_kind(), interval_ms)
 
         self._refresh_cancel_token = CancelToken()
         self._refresh_loop = RefreshLoop(
@@ -1233,21 +1239,22 @@ class MainWindow(QMainWindow):
 
     def _apply_gold_defaults_for_data_source(self, kind: str) -> None:
         """Reset symbol/exchange to defaults when switching data source."""
-        from pa_agent.data.market_defaults import (
-            A_SHARE_DEFAULT_TIMEFRAME,
-            normalize_gold_symbol_for_kind,
+        from pa_agent.data.market_defaults import normalize_gold_symbol_for_kind
+        from pa_agent.data.sources_registry import (
+            source_default_timeframe,
+            source_supported_timeframes,
         )
 
         sym = normalize_gold_symbol_for_kind(kind, self._symbol_combo.currentText().strip())
         self._symbol_combo.blockSignals(True)
         self._symbol_combo.setCurrentText(sym)
         self._symbol_combo.blockSignals(False)
-        if kind == "akshare":
-            if self._tf_combo.currentText() not in ("1h", "4h", "1d"):
-                self._tf_combo.setCurrentText(A_SHARE_DEFAULT_TIMEFRAME)
-        elif kind == "westock":
-            if self._tf_combo.currentText() not in ("1d", "1w", "1M", "3M", "1y"):
-                self._tf_combo.setCurrentText("1d")
+        # A source whose timeframe vocabulary differs (WeStock calendar
+        # periods, Baostock without 1m, Binance without 3M) must not keep the
+        # previous source's timeframe, or the very first refresh fails.
+        supported = source_supported_timeframes(kind)
+        if supported is not None and self._tf_combo.currentText() not in supported:
+            self._tf_combo.setCurrentText(source_default_timeframe(kind))
 
     def _apply_tv_exchange_to_source(self, data_source: Any) -> None:
         from pa_agent.data.market_defaults import sanitize_tv_exchange_for_symbol
@@ -1355,17 +1362,12 @@ class MainWindow(QMainWindow):
         line = self._symbol_combo.lineEdit()
         if line is None:
             return
-        kind = self._current_data_source_kind()
-        if kind == "tradingview":
-            line.setPlaceholderText(
-                "A股 6 位 / 港股 1810 / 名称 小米集团；交易所可自动；或 XAUUSD+OANDA"
-            )
-        elif kind in ("akshare", "eastmoney", "tushare"):
-            line.setPlaceholderText("A股 6 位代码，如 600519；指数 000300 或 sh000300")
-        elif kind == "westock":
-            line.setPlaceholderText("A股 6 位或 sh/sz/bj 前缀；港股 hk00700；美股 usAAPL")
-        else:
-            line.setPlaceholderText("输入 MT5 品种名，如 XAUUSDm…")
+        from pa_agent.data.sources_registry import source_placeholder
+
+        text = source_placeholder(self._current_data_source_kind())
+        if not text:
+            text = "输入 MT5 品种名，如 XAUUSDm…"
+        line.setPlaceholderText(text)
 
     def _populate_symbol_combo_for_source(self) -> None:
         """Refresh symbol suggestions for the active data source."""

@@ -145,6 +145,15 @@ class GeneralSettingsDialog(QDialog):
         )
         source_form.addRow("TradingView 代理:", self._tv_proxy_edit)
 
+        self._binance_proxy_edit = QLineEdit()
+        self._binance_proxy_edit.setPlaceholderText("留空 = 沿用 TradingView 代理，再空则自动探测")
+        self._binance_proxy_edit.setToolTip(
+            "币安现货 REST 行情使用的代理地址，仅影响 Binance 数据源。\n\n"
+            "留空时先沿用上面的 TradingView 代理；两项都为空才走自动探测。\n"
+            "国内网络访问 api.binance.com 通常需要代理。"
+        )
+        source_form.addRow("Binance 代理:", self._binance_proxy_edit)
+
         form_layout.addWidget(source_group)
 
         # ── 图表与界面 ────────────────────────────────────────────────────────
@@ -249,6 +258,7 @@ class GeneralSettingsDialog(QDialog):
         self._last_timeframe_edit.setText(g.last_timeframe)
 
         self._tv_proxy_edit.setText(getattr(g, "tradingview_proxy", ""))
+        self._binance_proxy_edit.setText(getattr(g, "binance_proxy", ""))
 
         self._refresh_interval_spin.setValue(g.refresh_interval_ms)
         self._auto_resume_chart_check.setChecked(
@@ -263,6 +273,17 @@ class GeneralSettingsDialog(QDialog):
         self._flow_default_zoom_spin.setValue(
             int(getattr(g, "decision_flow_default_zoom_pct", 600))
         )
+
+    @staticmethod
+    def _proxy_is_valid(value: str) -> bool:
+        """Whether a user-typed proxy address parses to a host."""
+        from urllib.parse import urlparse
+
+        normalized = value if "://" in value else f"http://{value}"
+        try:
+            return bool(urlparse(normalized).hostname)
+        except ValueError:
+            return False
 
     def _on_save(self) -> None:
         g = self._settings.general
@@ -279,20 +300,19 @@ class GeneralSettingsDialog(QDialog):
         g.last_timeframe = self._last_timeframe_edit.text().strip()
 
         tv_proxy = self._tv_proxy_edit.text().strip()
-        if tv_proxy:
-            from urllib.parse import urlparse
-
-            normalized = tv_proxy if "://" in tv_proxy else f"http://{tv_proxy}"
-            if not urlparse(normalized).hostname:
+        binance_proxy = self._binance_proxy_edit.text().strip()
+        for label, value in (("TradingView", tv_proxy), ("Binance", binance_proxy)):
+            if value and not self._proxy_is_valid(value):
                 QMessageBox.warning(
                     self,
-                    "TradingView 代理地址无效",
-                    f"无法解析代理地址：{tv_proxy}\n\n"
+                    f"{label} 代理地址无效",
+                    f"无法解析代理地址：{value}\n\n"
                     "示例：http://127.0.0.1:7890 或 127.0.0.1:7890\n"
                     "如要恢复自动探测，请清空该输入框。",
                 )
                 return
         g.tradingview_proxy = tv_proxy
+        g.binance_proxy = binance_proxy
 
         g.refresh_interval_ms = self._refresh_interval_spin.value()
         g.auto_resume_chart_after_analysis = self._auto_resume_chart_check.isChecked()
