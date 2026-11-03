@@ -8,7 +8,7 @@
 
 | 项目 | 结果 | 命令 |
 |------|------|------|
-| 非 live 测试 | **915 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
+| 非 live 测试 | **924 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
 | e2e smoke | **4 passed**（无挂起） | `python -m pytest tests/e2e` |
 | ruff | 198 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
 | black | 全部通过 | `python -m black --check pa_agent tests tools` |
@@ -32,6 +32,9 @@
    `tradingview_proxy` → 自动探测。
 5. **`proxy_env.py`**：把 TradingView 里的代理探测（手动/环境变量/系统注册表/常见端口）抽成共用模块，
    TradingView 的静态方法改为一行转发（对外签名不变，原有测试不需要改）。
+6. **口径修正（`5cfe917`）**：Baostock 成交量是「股」而其余 A 股源用「手」（实测差 100 倍），统一换算；
+   Baostock `adjustflag` 是 1=后复权 / 2=前复权 / 3=不复权，而 `akshare_source` 原映射把 hfq 与 none
+   写反（选「不复权」拿到后复权价），现由 `eastmoney_baostock.baostock_adjust_flag()` 统一。
 
 ## 二、这一轮修了什么
 
