@@ -16,7 +16,8 @@ DATA_SOURCE_CHOICES: tuple[tuple[DataSourceKind, str], ...] = tuple(
     (spec.kind, spec.label) for spec in SOURCE_SPECS if spec.ui_visible
 )
 
-# UI-visible sources only — ``eastmoney`` is config/programmatic, not listed.
+# Sources kept out of the combo box (config/programmatic only), derived from
+# the registry so a hidden source cannot drift away from its spec.
 _HIDDEN_KINDS: frozenset[DataSourceKind] = HIDDEN_KINDS  # type: ignore[assignment]
 
 
