@@ -494,7 +494,9 @@ class AkShareSource(DataSource):
                 if freq != "d"
                 else "date,code,open,high,low,close,volume"
             )
-            adjustflag = {"none": "1", "qfq": "2", "hfq": "3"}[get_kline_adjust()]
+            from pa_agent.data.eastmoney_baostock import baostock_adjust_flag
+
+            adjustflag = baostock_adjust_flag(get_kline_adjust())
             rs = bs.query_history_k_data_plus(
                 code,
                 fields,

@@ -36,6 +36,7 @@ from pa_agent.data.base import (
 )
 from pa_agent.data.eastmoney_baostock import (
     BaostockSession,
+    baostock_adjust_flag,
     baostock_code,
     calendar_days_for_bars,
     collect_baostock_rows,
@@ -51,7 +52,8 @@ _FREQUENCY: dict[str, str] = {"1d": "d", "1w": "w", "1M": "m"}
 _MINUTE_FREQUENCY: dict[str, str] = {"5m": "5", "15m": "15", "30m": "30", "1h": "60"}
 _DAILY_FIELDS = "date,code,open,high,low,close,volume,amount,pctChg"
 _MINUTE_FIELDS = "date,time,code,open,high,low,close,volume,amount"
-_ADJUST_FLAG: dict[str, str] = {"qfq": "2", "hfq": "1", "none": "3"}
+# Same mapping as the East Money / AkShare fallbacks (see baostock_adjust_flag).
+_ADJUST_FLAG = baostock_adjust_flag
 
 _PRESET_SYMBOLS: tuple[str, ...] = (
     "600000",
@@ -89,7 +91,7 @@ def _query_code(symbol: str) -> str:
 
 
 def _adjust_flag() -> str:
-    return _ADJUST_FLAG.get(str(get_kline_adjust() or "qfq").lower(), "2")
+    return _ADJUST_FLAG(get_kline_adjust())
 
 
 def _ts_ms_of_daily(day: str) -> int:
@@ -117,6 +119,13 @@ def _float_of(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return out if out == out else 0.0  # NaN guard
+
+
+def _shares_to_lots(shares: float) -> float:
+    """Baostock reports 成交量 in 股; every other A-share source here uses 手."""
+    if shares <= 0:
+        return 0.0
+    return float(shares) / 100.0
 
 
 def _week_close(now: datetime) -> datetime:
@@ -311,7 +320,7 @@ class BaostockSource(DataSource):
                     "high": _float_of(record.get("high")),
                     "low": _float_of(record.get("low")),
                     "close": _float_of(record.get("close")),
-                    "volume": _float_of(record.get("volume")),
+                    "volume": _shares_to_lots(_float_of(record.get("volume"))),
                     "amount": _float_of(record.get("amount")),
                     "pct_chg": _pct_or_none(record.get("pctChg")),
                 }
@@ -359,7 +368,7 @@ class BaostockSource(DataSource):
                     "high": _float_of(record.get("high")),
                     "low": _float_of(record.get("low")),
                     "close": _float_of(record.get("close")),
-                    "volume": _float_of(record.get("volume")),
+                    "volume": _shares_to_lots(_float_of(record.get("volume"))),
                     "amount": _float_of(record.get("amount")),
                     "pct_chg": None,
                 }

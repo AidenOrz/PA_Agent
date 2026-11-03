@@ -59,6 +59,17 @@ _BAOSTOCK_FREQ: dict[str, str] = {
     "1h": "60",
 }
 
+# Baostock adjustflag: 1 = 后复权, 2 = 前复权, 3 = 不复权.  (AkShare used to map
+# this as {"none": "1", "qfq": "2", "hfq": "3"}, i.e. hfq and none were swapped
+# and "后复权" bars were served under the 不复权 setting.)
+_ADJUST_FLAG: dict[str, str] = {"qfq": "2", "hfq": "1", "none": "3"}
+
+
+def baostock_adjust_flag(adjust: str | None) -> str:
+    """Map ``qfq`` / ``hfq`` / ``none`` to Baostock's ``adjustflag``."""
+    key = str(adjust or "qfq").strip().lower()
+    return _ADJUST_FLAG.get(key, "2")
+
 
 def eastmoney_rolling_cap(period: str) -> int:
     return _EM_ROLLING_CAP.get(period, 128)

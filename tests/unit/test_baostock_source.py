@@ -231,3 +231,34 @@ def test_intraday_bar_outside_the_session_is_closed():
     opened = int(datetime(2026, 11, 3, 10, 0, tzinfo=_CN).timestamp() * 1000)
     assert head_bar_still_forming(opened, "15m", datetime(2026, 11, 3, 10, 5, tzinfo=_CN))
     assert not head_bar_still_forming(opened, "15m", datetime(2026, 11, 3, 12, 0, tzinfo=_CN))
+
+
+def test_volume_is_reported_in_lots_not_shares(fake_session, monkeypatch):
+    """Baostock 成交量 是「股」，其余 A 股数据源统一用「手」：不换算会大 100 倍。"""
+    monkeypatch.setattr(bs_mod, "cn_now", lambda: datetime(2026, 11, 3, 20, 0, tzinfo=_CN))
+    fake_session.rows = [
+        ["2026-11-02", "sh.600519", "1", "1", "1", "10", "8269122", "11849258015", "0"],
+    ]
+    source = BaostockSource()
+    source.connect()
+    source.subscribe("600519", "1d")
+    bars = source.latest_snapshot(1)
+    # 8_269_122 股 = 82_691.22 手, which is what 东方财富 reports for the day.
+    assert bars[0].volume == pytest.approx(82691.22)
+
+
+def test_adjust_flag_follows_the_shared_setting(monkeypatch):
+    from pa_agent.data import kline_adjust
+    from pa_agent.data.eastmoney_baostock import baostock_adjust_flag
+
+    # 1 = 后复权, 2 = 前复权, 3 = 不复权.  AkShare used to ship the swapped map
+    # ({"none":"1","qfq":"2","hfq":"3"}), so 不复权 bars were actually 后复权.
+    assert baostock_adjust_flag("qfq") == "2"
+    assert baostock_adjust_flag("hfq") == "1"
+    assert baostock_adjust_flag("none") == "3"
+    assert baostock_adjust_flag(None) == "2"
+    assert baostock_adjust_flag("garbage") == "2"
+
+    for adjust, flag in (("qfq", "2"), ("hfq", "1"), ("none", "3")):
+        monkeypatch.setattr(kline_adjust, "_current", adjust)
+        assert bs_mod._adjust_flag() == flag
