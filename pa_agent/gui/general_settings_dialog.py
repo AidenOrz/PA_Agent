@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pa_agent.config.paths import SETTINGS_JSON_PATH
 from pa_agent.config.settings import Settings, save_settings
 
 
@@ -323,6 +322,11 @@ class GeneralSettingsDialog(QDialog):
         g.decision_flow_auto_play = self._flow_auto_play_check.isChecked()
         g.decision_flow_play_seconds = self._flow_play_seconds_spin.value()
         g.decision_flow_default_zoom_pct = self._flow_default_zoom_spin.value()
+
+        # Resolve the path at call time: a module-level snapshot would keep
+        # writing the developer config/ path even when the app (or a test)
+        # rebinds SETTINGS_JSON_PATH.
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
 
         save_settings(self._settings, SETTINGS_JSON_PATH)
         self.accept()

@@ -65,6 +65,23 @@ class SessionTokenLedger(QObject):
             logger.warning("Context usage >= %.0f%% (%.1f%%)", self._warn_pct, pct)
             self.threshold_crossed.emit("yellow", totals)
 
+    def set_warn_pct(self, warn_pct: float) -> None:
+        """Update the yellow threshold without restarting the app.
+
+        The ledger is built once during bootstrap; a general-settings save must
+        be able to move the warning line without a restart.  The yellow flag is
+        re-armed so a lowered threshold can still fire in the current session,
+        while a raised one will not re-fire for usage already below it.
+        """
+        self._warn_pct = float(warn_pct)
+        self._yellow_fired = False
+
+    def set_context_window(self, context_window: int) -> None:
+        """Update the context window (provider change) and re-arm warnings."""
+        self._context_window = max(int(context_window), 1)
+        self._yellow_fired = False
+        self._red_fired = False
+
     def reset(self) -> None:
         """Reset all counters (e.g. on symbol/timeframe switch)."""
         self.total_input = 0

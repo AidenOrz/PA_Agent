@@ -583,16 +583,12 @@ class MainWindow(QMainWindow):
         for ex in TV_EXCHANGE_PRESETS:
             label = _EXCHANGE_LABELS.get(ex, ex)
             self._tv_exchange_combo.addItem(label, ex)
-        # Restore saved exchange from settings, default to auto.
+        # Restore saved exchange from the live Settings object.  Reloading the
+        # file here used to hand the combo a second, stale copy: changes not yet
+        # flushed to disk were invisible, and the reload could rewrite defaults.
         saved_ex = ""
-        try:
-            from pa_agent.config.paths import SETTINGS_JSON_PATH
-            from pa_agent.config.settings import load_settings
-
-            _s = load_settings(SETTINGS_JSON_PATH)
-            saved_ex = getattr(_s.general, "last_tradingview_exchange", "") or ""
-        except Exception:
-            pass
+        if _settings is not None:
+            saved_ex = getattr(_settings.general, "last_tradingview_exchange", "") or ""
         idx_ex = self._tv_exchange_combo.findData(saved_ex)
         if idx_ex < 0:
             idx_ex = self._tv_exchange_combo.findData("")
@@ -675,20 +671,30 @@ class MainWindow(QMainWindow):
         self._demo_btn.setToolTip("用 records/pending 中已保存的分析记录回放界面")
         self._demo_btn.clicked.connect(self._on_demo_mode_button)
 
-        # 持续跟踪分析勾选框：勾选后有新K线收盘时自动开始新一轮分析
-        # 每次启动强制为未勾选，避免程序启动时立即自动拉取数据
+        # 持续跟踪分析勾选框：勾选后有新K线收盘时自动开始新一轮分析。
+        # 这里恢复上次的偏好，但必须屏蔽信号：直接 setChecked(True) 会触发
+        # _on_keep_analysis_checkbox_changed 立刻调 _ensure_refresh_loop_running
+        # 启动 RefreshLoop，而启动阶段数据源可能还没连上、也不该自动拉数据。
+        # 只还原 UI 状态；真正的自动分析等 RefreshLoop 推送第一帧后由
+        # _check_keep_analysis 接管（它会先初始化哨兵再等待当前K线收盘）。
+        _keep_on = bool(getattr(getattr(_settings, "general", None), "keep_analysis", False))
         self._keep_analysis_checkbox = QCheckBox("持续跟踪分析")
-        self._keep_analysis_checkbox.setChecked(False)
+        self._keep_analysis_checkbox.blockSignals(True)
+        self._keep_analysis_checkbox.setChecked(_keep_on)
+        self._keep_analysis_checkbox.blockSignals(False)
         self._keep_analysis_checkbox.setToolTip("勾选后，每当有新的K线收盘时自动开始新一轮分析")
         self._keep_analysis_checkbox.stateChanged.connect(self._on_keep_analysis_checkbox_changed)
         ctrl_layout.addWidget(self._keep_analysis_checkbox)
 
-        # Reset persisted keep_analysis flag so future restarts also start unchecked
-        if _settings is not None:
-            try:
-                _settings.general.keep_analysis = False
-            except Exception:
-                pass
+        # 与勾选状态绑定的 UI 约束：勾上持续跟踪分析时「等待K线收盘」是锁定勾中的。
+        # 同样只改 UI，不触发任何会自动拉数据的槽。
+        if _keep_on:
+            _wait_close_cb = getattr(self, "_wait_close_checkbox", None)
+            if _wait_close_cb is not None:
+                _wait_close_cb.blockSignals(True)
+                _wait_close_cb.setChecked(True)
+                _wait_close_cb.blockSignals(False)
+                _wait_close_cb.setEnabled(False)
 
         self._resume_chart_btn = QPushButton("图表实时更新")
         self._resume_chart_btn.setEnabled(False)
@@ -4627,15 +4633,28 @@ class MainWindow(QMainWindow):
         """内部使用：启动时检测到 API Key 未配置时直接打开 AI 模型设置."""
         self._open_ai_model_settings_dialog(focus_api_key=focus_api_key)
 
+    def _ensure_settings_loaded(self) -> Any:
+        """Return the live Settings object for a dialog to edit.
+
+        Never fall back to a bare Settings(): a dialog opened on a fresh default
+        object would, on save, overwrite the users settings file with defaults —
+        which the user experiences as "设置记不住，每次都重置".
+        """
+        settings = getattr(self._ctx, "settings", None)
+        if settings is not None:
+            return settings
+        from pa_agent.config.settings import load_settings
+
+        settings = load_settings()
+        self._ctx.settings = settings
+        return settings
+
     def _open_ai_model_settings_dialog(self, *, focus_api_key: bool = False) -> None:
         """打开 AI 模型设置对话框."""
-        from pa_agent.config.settings import Settings
         from pa_agent.gui.ai_model_settings_dialog import AIModelSettingsDialog
         from pa_agent.util.logging import update_api_key
 
-        settings: Settings = self._ctx.settings  # type: ignore[assignment]
-        if settings is None:
-            settings = Settings()
+        settings = self._ensure_settings_loaded()
 
         dlg = AIModelSettingsDialog(settings, parent=self)
         if focus_api_key:
@@ -4672,12 +4691,9 @@ class MainWindow(QMainWindow):
 
     def _open_feishu_settings_dialog(self) -> None:
         """打开飞书机器人设置对话框."""
-        from pa_agent.config.settings import Settings
         from pa_agent.gui.feishu_settings_dialog import FeishuSettingsDialog
 
-        settings: Settings = self._ctx.settings  # type: ignore[assignment]
-        if settings is None:
-            settings = Settings()
+        settings = self._ensure_settings_loaded()
 
         dlg = FeishuSettingsDialog(settings=settings, parent=self)
         if dlg.exec():
@@ -4686,19 +4702,72 @@ class MainWindow(QMainWindow):
 
     def _open_general_settings_dialog(self) -> None:
         """打开通用设置对话框."""
-        from pa_agent.config.settings import Settings
         from pa_agent.gui.general_settings_dialog import GeneralSettingsDialog
 
-        settings: Settings = self._ctx.settings  # type: ignore[assignment]
-        if settings is None:
-            settings = Settings()
+        settings = self._ensure_settings_loaded()
+        before = self._general_runtime_snapshot(settings)
 
         dlg = GeneralSettingsDialog(settings, parent=self)
         dlg.set_decision_flow_play_handler(self._trigger_decision_flow_playback)
-        if dlg.exec():
-            self._ctx.settings = settings
-            self._ai_sidebar.bind_settings(settings)
-            self._apply_chart_display_settings()
+        if not dlg.exec():
+            return
+        self._ctx.settings = settings
+        self._ai_sidebar.bind_settings(settings)
+        self._apply_chart_display_settings()
+        self._apply_general_runtime_settings(before, settings)
+
+    @staticmethod
+    def _general_runtime_snapshot(settings: Any) -> tuple[int, bool, float]:
+        """Capture the general-settings values whose consumers read them once.
+
+        The dialog mutates the live Settings object in place, so the previous
+        values must be captured before exec() to know what actually changed.
+        """
+        general = getattr(settings, "general", None)
+        interval = getattr(general, "refresh_interval_ms", 1000)
+        threshold = getattr(general, "context_warning_threshold_pct", 80.0)
+        return (
+            int(interval if interval is not None else 1000),
+            bool(getattr(general, "keep_analysis", False)),
+            float(threshold if threshold is not None else 80.0),
+        )
+
+    def _apply_general_runtime_settings(
+        self, before: tuple[int, bool, float], settings: Any
+    ) -> None:
+        """Push freshly saved general settings into the live consumers.
+
+        Several consumers snapshot their values once (RefreshLoop at
+        construction, SessionTokenLedger at bootstrap, the keep-analysis
+        checkbox at startup).  Without this re-apply step a saved value only
+        takes effect after a restart — which reads as "保存了但不生效".
+        """
+        general = settings.general
+        prev_interval = before[0]
+
+        # 1) 持续跟踪分析：对话框是持久化偏好的入口，工具栏勾选框必须跟上。
+        #    走正常信号链路，让「锁定等待收盘 / 必要时启动刷新循环」一起生效。
+        keep = bool(getattr(general, "keep_analysis", False))
+        checkbox = getattr(self, "_keep_analysis_checkbox", None)
+        if checkbox is not None and checkbox.isChecked() != keep:
+            checkbox.setChecked(keep)
+
+        # 2) 刷新间隔：RefreshLoop 在 __init__ 里快照了 interval_ms。
+        interval = int(getattr(general, "refresh_interval_ms", 1000) or 1000)
+        if interval != prev_interval:
+            loop = getattr(self, "_refresh_loop", None)
+            if loop is not None and loop.isRunning():
+                self._restart_refresh_loop()
+
+        # 3) 上下文告警阈值：ledger 在 bootstrap 时快照。
+        ledger = getattr(self._ctx, "ledger", None)
+        set_warn_pct = getattr(ledger, "set_warn_pct", None)
+        threshold = getattr(general, "context_warning_threshold_pct", 80.0)
+        if callable(set_warn_pct) and threshold is not None:
+            set_warn_pct(float(threshold))
+
+        # 4) 凭据类字段（tushare token 等）也要让脱敏消费者重新登记。
+        self._sync_secret_consumers(settings)
 
     def _apply_chart_display_settings(self) -> None:
         """Sync chart label font sizes and decision-flow zoom from persisted settings."""

@@ -8,12 +8,12 @@
 
 | 项目 | 结果 | 命令 |
 |------|------|------|
-| 非 live 测试 | **924 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
+| 非 live 测试 | **934 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
 | e2e smoke | **4 passed**（无挂起） | `python -m pytest tests/e2e` |
-| ruff | 198 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
-| black | 全部通过 | `python -m black --check pa_agent tests tools` |
+| ruff | 196 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
+| black | 全部通过（282 个文件） | `python -m black --check pa_agent tests tools` |
 | CI | 首次通过（windows-latest / Python 3.11 / `QT_QPA_PLATFORM=minimal`） | `gh run view 41478417351` |
-| 规模 | 133 个源文件 / 135 个测试文件（其中 122 个 `test_*.py`）/ 139 次提交 | — |
+| 规模 | 137 个源文件 / 140 个测试文件（其中 127 个 `test_*.py`）/ 145 次提交 | — |
 
 审查开始时的基线是 743 passed / 39 skipped / **6 failed**，e2e 4 个全部挂死（需强杀进程）。
 
@@ -87,6 +87,35 @@
 - `tests/e2e` 曾全部挂死：根因是 `show_validation_debug_dialog` 的模态框阻塞 `qtbot.waitUntil`；
   而 4 个用例本身还依赖 `ctx.settings`（默认 `None`）与 `ctx.data_source`（默认 `None`）。
 
+### 通用设置「记不住、每次都重置」（本轮新增）
+
+用户反馈「通用设置记不住设置，每次都重置」。先用四组探针证明保存/加载链路本身没丢值：
+对话框 `_on_save` → 磁盘 → `load_settings` → 新建对话框，20 个控件全部 round-trip 一致；
+连续 5 次「改一个字段→保存」逐次落盘并保持；磁盘与 `load_settings` 逐字段无差异。
+真正的成因有三条：
+
+1. **启动时把 `keep_analysis` 强制改回 False**（`main_window.py` 的 `_setup_ui`）：只改内存不落盘，
+   于是重启后通用设置里「持续跟踪分析」永远显示未勾选；之后任何一次整份保存（切品种、切数据源、
+   切 TV 交易所、勾选持续跟踪、重试取消）都会把 False 写回磁盘，用户此前的勾选被永久抹掉。
+   现改为按持久化值还原勾选框（`blockSignals` 屏蔽信号，启动阶段仍不会自动拉数据），并同步
+   「等待K线收盘」的锁定状态。
+2. **设置对话框用 `Settings()` 兜底**：`ctx.settings is None` 时（直接 `AppContext()` 构造）三个对话框
+   都在一份全新默认对象上编辑，保存即用默认值覆盖磁盘。新增 `_ensure_settings_loaded()`：缺 settings
+   时 `load_settings()` 读盘，而不是造一份默认值。
+3. **跑测试会改写用户真实的 `config/settings.json`**：e2e 的 `_on_symbol_or_tf_changed` 会调
+   `save_settings()` 写到默认路径，而 `save_settings` 还会用 DPAPI 重新加密 `provider.api_key`；
+   实测一次 `pytest` 就把文件改成 `analysis_bar_count=20 / last_symbol=EURUSD`，并把 API key 换成
+   测试 key。`tests/conftest.py` 新增 autouse fixture，把 `SETTINGS_JSON_PATH` 指到每个用例自己的
+   tmp 目录；三个设置对话框里 `SETTINGS_JSON_PATH` 的模块级快照也改为调用时导入（否则 patch 不到）。
+
+**保存后立即生效**：`refresh_interval_ms`（RefreshLoop 构造时快照）、`context_warning_threshold_pct`
+（ledger 在 bootstrap 时快照）、`keep_analysis`（只在启动时读）此前都要重启才生效。
+`_open_general_settings_dialog` 现在先快照这几个值，保存后由 `_apply_general_runtime_settings()` 按差异
+重启 RefreshLoop、调 `SessionTokenLedger.set_warn_pct()`、同步工具栏勾选框；实时页字号由
+`_ai_sidebar.bind_settings()` 负责。TV 交易所的初始值也改为读 `ctx.settings`，不再二次 `load_settings()`。
+
+回归测试：`tests/unit/test_gui_settings_persistence.py`（10 例，含「保存设置不得碰真实配置文件」）。
+
 ### 首次真正跑起来的 CI（3 个后续提交）
 
 CI 过去两年只执行 `import pa_agent`，等于从未验证过任何东西。改成真实跑测试后，连续暴露三个问题：
@@ -131,6 +160,8 @@ git clone --depth 1 file:///E:/PA_Agent .tmp-cleancheck && cd .tmp-cleancheck &&
   `test_decision_flow_animation.py`，这三个覆盖了本轮 GUI 修复的全部回归点。
 - 改数据层收盘/缓存逻辑：`tests/unit/test_bar_close_wait.py`、`test_ashare_trading_calendar.py`、
   `test_tushare_source.py`。
+- 改设置项/持久化：`tests/unit/test_gui_settings_persistence.py`（启动还原「持续跟踪分析」、
+  保存后即时生效、测试不得改写真实 `config/settings.json`）。
 - 改数据源清单/新增数据源：`tests/unit/test_sources_registry.py`（注册表不变量）、`test_baostock_source.py`、
   `test_binance_source.py`；说明见 `docs/数据源注册表与新数据源.md`。
 - 改校验/规范化：`test_section14_gate.py`、`test_no_order_helper.py`、`test_validation_lenient_fixes.py`。

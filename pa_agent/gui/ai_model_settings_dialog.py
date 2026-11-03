@@ -30,7 +30,6 @@ from pa_agent.ai.workbuddy_connector import (
     is_openclaw_wb_model,
     should_use_workbuddy_provider,
 )
-from pa_agent.config.paths import SETTINGS_JSON_PATH
 from pa_agent.config.settings import Settings, save_settings
 
 _API_KEY_HELP_URL = "https://my.feishu.cn/wiki/CUV1wUKWxiQGhekQdRvcZQQ2ncf"
@@ -150,6 +149,9 @@ class AIModelSettingsDialog(QDialog):
 
         p.thinking = self._thinking_check.isChecked()
         p.reasoning_effort = self._reasoning_effort_combo.currentText()  # type: ignore[assignment]
+
+        # Late-bound path (see general_settings_dialog._on_save).
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
 
         save_settings(self._settings, SETTINGS_JSON_PATH)
         self.accept()

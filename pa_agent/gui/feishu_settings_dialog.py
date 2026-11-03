@@ -29,7 +29,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pa_agent.config.paths import SETTINGS_JSON_PATH
 from pa_agent.config.settings import Settings, save_settings
 
 logger = logging.getLogger(__name__)
@@ -182,6 +181,9 @@ class FeishuSettingsDialog(QDialog):
             )
             return
         try:
+            # Late-bound path (see general_settings_dialog._on_save).
+            from pa_agent.config.paths import SETTINGS_JSON_PATH
+
             save_settings(self._settings, SETTINGS_JSON_PATH)
             self.accept()
         except Exception as exc:
