@@ -158,8 +158,10 @@ def test_stage2_system_prompt_order(assembler: PromptAssembler):
     pos_bar_by_bar = user.find("逐棒分析检查单")
     pos_signal = user.find("文件16-K线信号识别")
     pos_risk = user.find("文件17-止损和止盈与仓位管理")
-    assert 0 <= pos_strategy < pos_risk, "Stage 2 user task files are out of order"
-    assert 0 <= pos_bar_by_bar < pos_signal < pos_risk
+    # Base files (stable head, same on every cycle) precede routed strategy files:
+    # a routed subset whose order changes per cycle would otherwise break the
+    # DeepSeek KV prefix cache right at the start of the user turn.
+    assert 0 <= pos_bar_by_bar < pos_signal < pos_risk < pos_strategy
 
 
 def test_stage2_user_prompt_contains_stage1_json(assembler: PromptAssembler):
@@ -384,6 +386,53 @@ def test_stage2_continuation_prefix_chain_reuses_stage1(assembler: PromptAssembl
     assert "序号 | 时间" not in s2_user
     assert "完整 K 线表与几何特征已包含在上方阶段一用户消息中" in s2_user
 
+
+def test_stage2_standalone_mode_drops_stage1_chain(assembler: PromptAssembler):
+    """prompt.stage2_cache_mode=standalone keeps S1 out of the S2 request."""
+    from types import SimpleNamespace
+
+    frame = _make_frame()
+    stage1_messages = assembler.build_stage1(frame)
+    standalone = PromptAssembler(
+        assembler._prompt_dir,
+        prompt_settings=SimpleNamespace(stage2_cache_mode="standalone"),
+    )
+    # use_prefix_chain left at None: the setting decides, not the caller.
+    messages = standalone.build_stage2_continuation(
+        frame=frame,
+        stage1_messages=stage1_messages,
+        stage1_reply_content='{"cycle_position":"normal_channel","direction":"bullish"}',
+        stage1_json={"cycle_position": "normal_channel", "direction": "bullish"},
+        strategy_files=["上涨通道分析识别.txt"],
+        experience_entries=[],
+    )
+
+    # No assistant turn, no Stage 1 user turn: the static head stays reusable.
+    assert [m["role"] for m in messages] == ["system", "user"]
+    s2_user = messages[1]["content"]
+    assert "序号 | 时间" in s2_user
+    assert assembler.build_stage1(frame)[0]["content"] == messages[0]["content"]
+
+
+def test_stage2_user_prompt_puts_static_blocks_first(assembler: PromptAssembler):
+    """Static strategy files must lead the user turn so the KV prefix survives."""
+    frame = _make_frame()
+    stage1_json = {"cycle_position": "trading_range", "direction": "bullish"}
+    user = assembler.build_stage2(
+        frame, stage1_json, ["震荡区间交易策略.txt"], [], decision_stance="balanced"
+    )[1]["content"]
+
+    pos_api_rule = user.find("阶段二 API 任务模式")
+    pos_contract = user.find("请严格按照以下 JSON 格式输出决策结果")
+    pos_strategy = user.find("逐棒分析检查单")
+    # Anchor on a phrase unique to the stance block (the raw label appears in
+    # strategy .txt files as well, so it cannot be used as a position marker).
+    pos_stance = user.find("## 交易倾向（当前：均衡")
+    pos_diag = user.find("## 阶段一诊断结果")
+    assert 0 <= pos_api_rule < pos_strategy < pos_contract
+    # Dynamic blocks (stance / diagnosis) come after the whole static head,
+    # otherwise every analysis cycle breaks the cached prefix early.
+    assert pos_contract < pos_stance < pos_diag
 
 def test_stage2_prompt_includes_balanced_stance_guidance(assembler: PromptAssembler):
     frame = _make_frame()

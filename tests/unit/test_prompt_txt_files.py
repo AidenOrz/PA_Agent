@@ -10,6 +10,8 @@ from pa_agent.ai.prompt_assembler import (
     STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES,
     stage1_prompt_txt_files,
     stage2_prompt_txt_files,
+    stage2_routed_txt_files,
+    stage2_stable_txt_files,
     stage2_user_task_txt_files,
 )
 
@@ -52,5 +54,24 @@ def test_stage2_txt_files_order() -> None:
     expected_user = stage2_user_task_txt_files(routed, direction="neutral")
     assert files == [*COMMON_SYSTEM_STAGE2_TXT_FILES, *expected_user]
     assert files[:2] == list(COMMON_SYSTEM_STAGE2_TXT_FILES)
-    assert files[-4:] == list(STAGE2_BASE_PROMPT_TXT_FILES)
+    # Base files form the stable head of the user turn (KV prefix cache);
+    # routed files follow in canonical library order, not router order.
+    assert files[2:6] == list(STAGE2_BASE_PROMPT_TXT_FILES)
+    assert files[6:] == ["震荡区间分析识别.txt", "震荡区间交易策略.txt"]
     assert routed[0] in files
+
+def test_stage2_stable_and_routed_split() -> None:
+    """Routed files must be separable: the router re-decides them every cycle."""
+    routed = ["震荡区间交易策略.txt", "上涨通道分析识别.txt"]
+    stable = stage2_stable_txt_files()
+    assert stable == list(STAGE2_BASE_PROMPT_TXT_FILES)
+
+    extra = stage2_routed_txt_files(routed, direction="bullish", stable=stable)
+    assert extra == ["上涨通道分析识别.txt", "震荡区间交易策略.txt"]
+    assert not set(extra) & set(stable)
+
+    full_stable = stage2_stable_txt_files(load_full_strategy_library=True)
+    assert set(STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES) <= set(full_stable)
+    # With the full library nothing is left over: the head no longer depends
+    # on which subset the router happened to pick.
+    assert stage2_routed_txt_files(routed, direction="bullish", stable=full_stable) == []

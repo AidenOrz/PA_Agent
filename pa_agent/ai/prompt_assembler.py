@@ -842,32 +842,60 @@ def _directional_channel_files(direction: str) -> list[str]:
     return []
 
 
+def stage2_stable_txt_files(*, load_full_strategy_library: bool = False) -> list[str]:
+    """Return the .txt files that do **not** depend on this cycle's routing.
+
+    KV prefix cache note
+    --------------------
+    DeepSeek only reuses a byte-identical *prefix*. The router picks strategy
+    files from ``cycle_position`` / ``direction``, and that set differs on
+    almost every analysis (measured: 0 of 11 consecutive runs shared a set),
+    so anything emitted after the routed files is never served from cache.
+    Only these files are safe to place inside the cached head.
+    """
+    if load_full_strategy_library:
+        return [*STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES, *STAGE2_BASE_PROMPT_TXT_FILES]
+    return list(STAGE2_BASE_PROMPT_TXT_FILES)
+
+
+def stage2_routed_txt_files(
+    strategy_files: list[str] | None = None,
+    *,
+    direction: str = "",
+    stable: list[str] | None = None,
+) -> list[str]:
+    """Return the cycle-dependent strategy files (everything outside the stable head)."""
+    routed = [f for f in (strategy_files or []) if f]
+    dir_key = str(direction or "").strip().lower()
+    opposite = (
+        _CHANNEL_FILE_GROUPS.get("bearish", ())
+        if dir_key == "bullish"
+        else _CHANNEL_FILE_GROUPS.get("bullish", ()) if dir_key == "bearish" else ()
+    )
+    opposite_spike = (
+        _SPIKE_FILE_GROUPS.get("bearish", ())
+        if dir_key == "bullish"
+        else _SPIKE_FILE_GROUPS.get("bullish", ()) if dir_key == "bearish" else ()
+    )
+    skip = frozenset((*opposite, *opposite_spike, *(stable or ())))
+    kept = {f for f in routed if f not in skip}
+    # Emit in canonical library order, never in router order: two cycles that
+    # happen to route the same files must still produce the same bytes.
+    ordered = [f for f in STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES if f in kept]
+    unknown = sorted(kept.difference(ordered))
+    return list(dict.fromkeys([*ordered, *unknown]))
+
+
 def stage2_user_task_txt_files(
     strategy_files: list[str] | None = None,
     *,
     direction: str = "",
     load_full_strategy_library: bool = False,
 ) -> list[str]:
-    """Return .txt filenames loaded into the Stage 2 user turn only."""
-    routed = [f for f in (strategy_files or []) if f]
-    if load_full_strategy_library:
-        core = [*STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES, *STAGE2_BASE_PROMPT_TXT_FILES]
-    else:
-        dir_key = str(direction or "").strip().lower()
-        opposite = (
-            _CHANNEL_FILE_GROUPS.get("bearish", ())
-            if dir_key == "bullish"
-            else _CHANNEL_FILE_GROUPS.get("bullish", ()) if dir_key == "bearish" else ()
-        )
-        opposite_spike = (
-            _SPIKE_FILE_GROUPS.get("bearish", ())
-            if dir_key == "bullish"
-            else _SPIKE_FILE_GROUPS.get("bullish", ()) if dir_key == "bearish" else ()
-        )
-        skip = frozenset((*opposite, *opposite_spike))
-        core = [f for f in routed if f not in skip]
-        core.extend(STAGE2_BASE_PROMPT_TXT_FILES)
-    return list(dict.fromkeys([*core]))
+    """Return every .txt filename used by the Stage 2 user turn (stable + routed)."""
+    stable = stage2_stable_txt_files(load_full_strategy_library=load_full_strategy_library)
+    routed = stage2_routed_txt_files(strategy_files, direction=direction, stable=stable)
+    return list(dict.fromkeys([*stable, *routed]))
 
 
 def stage2_prompt_txt_files(
@@ -910,6 +938,14 @@ class PromptAssembler:
         if cfg is None:
             return False
         return bool(getattr(cfg, "stage2_load_full_strategy_library", False))
+
+    def _stage2_cache_mode(self) -> str:
+        """Stage 2 request shape: chain (after Stage 1) or standalone."""
+        cfg = self._prompt_settings
+        if cfg is None:
+            return "chain"
+        mode = str(getattr(cfg, "stage2_cache_mode", "chain") or "chain").strip().lower()
+        return mode if mode in ("chain", "standalone") else "chain"
 
     # ── Process-level system-prompt cache ────────────────────────────────────
     # DeepSeek KV Cache hits require the *prefix* of consecutive requests to
@@ -1562,7 +1598,10 @@ class PromptAssembler:
         from pa_agent.ai.deepseek_client import supports_kv_prefix_chain
 
         if use_prefix_chain is None:
-            use_prefix_chain = supports_kv_prefix_chain(provider_settings)
+            use_prefix_chain = (
+                supports_kv_prefix_chain(provider_settings)
+                and self._stage2_cache_mode() != "standalone"
+            )
 
         chain_after_s1 = bool(use_prefix_chain and stage1_messages)
         stage2_user_content = self._build_stage2_user_prompt(
@@ -1623,21 +1662,48 @@ class PromptAssembler:
         conflict_block = self._render_trend_conflict_guidance(stage1_json)
         transition_block = self._render_transition_guidance(stage1_json)
         planned_limit_block = self._render_planned_limit_hint(stage1_json, frame)
-        stage2_parts = [
-            stance_block,
-            continuity_block,
-            conflict_block,
-            transition_block,
-            planned_limit_block,
-            *(
-                self._load(name)
-                for name in stage2_user_task_txt_files(
-                    strategy_files,
-                    direction=str(stage1_json.get("direction", "") or ""),
-                    load_full_strategy_library=self._load_full_strategy_library(),
-                )
-            ),
-        ]
+        # ── Cache-friendly block order (DeepSeek KV prefix cache) ─────────────
+        # [stable]   next-bar note → BASE files → output contract → rule
+        # [stable]   stance (4 variants only; changes almost never)
+        # [dynamic]  continuity / conflict / transition / planned-limit
+        # [routed]   strategy files picked by this cycle's routing
+        # Anything after a cycle-dependent block is cache-dead, so the routed
+        # files go last even though they are static text within one cycle.
+        full_library = self._load_full_strategy_library()
+        stable_files = stage2_stable_txt_files(load_full_strategy_library=full_library)
+        routed_files = stage2_routed_txt_files(
+            strategy_files,
+            direction=str(stage1_json.get("direction", "") or ""),
+            stable=stable_files,
+        )
+
+        # Only files that never change between cycles may live in here: the
+        # routed set is re-decided every analysis, so anything after it never
+        # gets a cache hit (measured S2 hit rate fell to 19% because of this).
+        static_parts: list[str] = []
+        if enable_next_bar_prediction:
+            static_parts.append(_NEXT_BAR_PREDICTION_INSTRUCTION)
+        else:
+            static_parts.append(_NEXT_BAR_DISABLED_NOTE)
+        static_parts.extend(self._load(name) for name in stable_files)
+        static_parts.append(_STAGE2_OUTPUT_CONTRACT)
+        static_parts.append(
+            _build_next_cycle_prediction_instruction(enable_next_bar=enable_next_bar_prediction)
+        )
+
+        stage2_parts: list[str] = [*static_parts, stance_block]
+        stage2_parts.extend(
+            (
+                continuity_block,
+                conflict_block,
+                transition_block,
+                planned_limit_block,
+            )
+        )
+        # Routed strategy files sit *after* every stable block. Their content is
+        # still in the prompt (the model needs it), but they can no longer break
+        # the prefix for the blocks above.
+        stage2_parts.extend(self._load(name) for name in routed_files)
         if experience_entries:
             max_chars = 400
             if self._prompt_settings is not None:
@@ -1654,15 +1720,6 @@ class PromptAssembler:
                     max_chars_per_entry=max_chars,
                 )
             )
-        stage2_parts.append(_STAGE2_OUTPUT_CONTRACT)
-        if enable_next_bar_prediction:
-            stage2_parts.append(_NEXT_BAR_PREDICTION_INSTRUCTION)
-        else:
-            stage2_parts.append(_NEXT_BAR_DISABLED_NOTE)
-        stage2_parts.append(
-            _build_next_cycle_prediction_instruction(enable_next_bar=enable_next_bar_prediction)
-        )
-        # Static strategy / contract blocks first → better KV prefix reuse across runs.
         stage2_context = "\n\n---\n\n".join(p for p in stage2_parts if p)
 
         from pa_agent.util.price_tick import format_breakout_tick_hint

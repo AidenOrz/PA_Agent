@@ -51,6 +51,13 @@ class PromptSettings(BaseModel):
 
     #: When True, Stage 2 loads every strategy .txt (legacy/test behaviour).
     stage2_load_full_strategy_library: bool = False
+    #: Stage 2 request shape.
+    #: "standalone" = [system, user(S2)] — static head (strategy library + output
+    #:   contract) stays byte-identical across analyses; measured cross-run prefix
+    #:   reuse 93.9% vs 55.3% for chain on the same inputs.
+    #: "chain" = [system, user(S1), assistant(S1), user(S2)] — reuses the Stage 1
+    #:   turn, but that prefix dies as soon as one K line advances.
+    stage2_cache_mode: Literal["chain", "standalone"] = "standalone"
     experience_max_entries: int = Field(default=0, ge=0, le=10)
     experience_max_chars_per_entry: int = Field(default=400, ge=100, le=4000)
     #: Inject pattern判定表 + 速查 brief into Stage 1 user prompt (reduces missed tags).
