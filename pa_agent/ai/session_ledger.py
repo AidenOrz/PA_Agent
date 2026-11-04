@@ -40,6 +40,9 @@ class SessionTokenLedger(QObject):
         self.total_input: int = 0
         self.total_cached_input: int = 0
         self.total_output: int = 0
+        # Counters for the most recent API call only (cache-rate denominator).
+        self.last_prompt_tokens: int = 0
+        self.last_cached_prompt_tokens: int = 0
 
     @property
     def context_used(self) -> int:
@@ -50,6 +53,11 @@ class SessionTokenLedger(QObject):
         self.total_input += usage.prompt_tokens
         self.total_cached_input += usage.cached_prompt_tokens
         self.total_output += usage.completion_tokens
+        # Cache hit rate is a per-request ratio: keep the latest call's own
+        # numbers so the UI never divides a summed numerator by a summed
+        # denominator (the Stage 2 prompt repeats the Stage 1 turn).
+        self.last_prompt_tokens: int = usage.prompt_tokens
+        self.last_cached_prompt_tokens: int = usage.cached_prompt_tokens
 
         pct = self.context_used / self._context_window * 100.0
 
@@ -87,6 +95,8 @@ class SessionTokenLedger(QObject):
         self.total_input = 0
         self.total_cached_input = 0
         self.total_output = 0
+        self.last_prompt_tokens = 0
+        self.last_cached_prompt_tokens = 0
         self._yellow_fired = False
         self._red_fired = False
 
@@ -96,6 +106,9 @@ class SessionTokenLedger(QObject):
         return {
             "total_input": self.total_input,
             "total_cached_input": self.total_cached_input,
+            # Latest single call, used for the displayed cache-hit rate.
+            "last_input": self.last_prompt_tokens,
+            "last_cached_input": self.last_cached_prompt_tokens,
             "total_output": self.total_output,
             "context_used": self.context_used,
             "context_window": self._context_window,

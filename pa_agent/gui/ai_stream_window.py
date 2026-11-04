@@ -509,9 +509,17 @@ class AIStreamPanel(QWidget):
         else:
             self._progress_bar.setStyleSheet(_STYLE_NORMAL)
 
-        cache_hit_pct = (total_cached / total_input * 100.0) if total_input > 0 else 0.0
-        if total_cached > 0:
-            cache_str = f" · 缓存 {total_cached:,} ({cache_hit_pct:.0f}%)"
+        # 命中率必须按「单次请求」算：S1+S2 相加作分母会把阶段二重复包含的
+        # 阶段一内容重复计入，并用必然冷启动的 S1 稀释真实命中率。
+        denom = data.get("last_input")
+        cached = data.get("last_cached_input")
+        if denom is None:  # 旧调用方没有单次字段时退回累计值
+            denom, cached = total_input, total_cached
+        denom = int(denom or 0)
+        cached = min(int(cached or 0), denom)
+        cache_hit_pct = (cached / denom * 100.0) if denom > 0 else 0.0
+        if cached > 0:
+            cache_str = f" · 缓存 {cached:,} ({cache_hit_pct:.0f}%)"
         else:
             cache_str = ""
 
@@ -520,9 +528,9 @@ class AIStreamPanel(QWidget):
             f"in {total_input:,} / out {total_output:,}{cache_str}"
         )
         self._token_label.setToolTip(
-            f"输入 token：{total_input:,}\n"
-            f"  缓存命中：{total_cached:,}（{cache_hit_pct:.1f}%）\n"
-            f"  未命中：{total_input - total_cached:,}\n"
+            f"输入 token（本轮累计）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
+            f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%）\n"
+            f"  未命中：{denom - cached:,}\n"
             f"输出 token：{total_output:,}\n"
             "DeepSeek KV Cache 命中的 token 按 10% 价格计费。"
         )

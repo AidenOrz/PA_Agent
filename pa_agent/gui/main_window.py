@@ -93,6 +93,46 @@ assert set(_EVENT_LABELS.values()) == ANALYSIS_EVENT_TEXTS, (
 )
 
 
+def _stage_usage_tokens(response: Any) -> tuple[int, int]:
+    """Return (prompt_tokens, cached_prompt_tokens) recorded for one stage."""
+    if not isinstance(response, dict):
+        return 0, 0
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return 0, 0
+    try:
+        prompt = int(usage.get("prompt_tokens") or 0)
+        cached = int(usage.get("cached_prompt_tokens") or 0)
+    except (TypeError, ValueError):
+        return 0, 0
+    return prompt, min(cached, prompt) if prompt else 0
+
+
+def _last_stage_usage(record: Any) -> tuple[int, int]:
+    """Usage of the latest stage call (Stage 2 when present, else Stage 1).
+
+    KV cache is billed per request, so a run-wide hit rate must not add the
+    two requests together: the Stage 2 prompt already contains the Stage 1
+    turn, and summing them double-counts the shared part while diluting the
+    number with a cold Stage 1.
+    """
+    for attr in ("stage2_response", "stage1_response"):
+        prompt, cached = _stage_usage_tokens(getattr(record, attr, None))
+        if prompt > 0:
+            return prompt, cached
+    return 0, 0
+
+
+def _last_stage_prompt_tokens(record: Any) -> int:
+    """Prompt tokens of the latest stage call (cache-rate denominator)."""
+    return _last_stage_usage(record)[0]
+
+
+def _last_stage_cached_tokens(record: Any) -> int:
+    """Cached prompt tokens of the latest stage call (cache-rate numerator)."""
+    return _last_stage_usage(record)[1]
+
+
 def _source_attr(source: Any, public: str, private: str, default: Any) -> Any:
     """Read a data-source attribute, preferring the public name.
 
@@ -4194,6 +4234,10 @@ class MainWindow(QMainWindow):
                             "context_window": context_window,
                             "total_input": prompt_tokens,
                             "total_cached_input": cached_tokens,
+                            # 命中率按「单次请求」计费：S1+S2 相加会把阶段二里重复包含的
+                            # 阶段一内容重复计入，还用必然冷启动的 S1 稀释真实命中率。
+                            "last_input": _last_stage_prompt_tokens(record),
+                            "last_cached_input": _last_stage_cached_tokens(record),
                             "total_output": completion_tokens,
                         }
                     )
@@ -4256,6 +4300,10 @@ class MainWindow(QMainWindow):
                         "context_window": context_window,
                         "total_input": prompt_tokens,
                         "total_cached_input": cached_tokens,
+                        # 命中率按「单次请求」计费：S1+S2 相加会把阶段二里重复包含的
+                        # 阶段一内容重复计入，还用必然冷启动的 S1 稀释真实命中率。
+                        "last_input": _last_stage_prompt_tokens(record),
+                        "last_cached_input": _last_stage_cached_tokens(record),
                         "total_output": completion_tokens,
                     }
                 )

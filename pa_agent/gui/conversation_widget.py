@@ -479,11 +479,17 @@ class ConversationWidget(QWidget):
 
         total_tokens = total_input + total_output
 
-        # Build cache-hit rate display
-        # DeepSeek KV Cache: cached tokens are billed at 10% of the normal input price.
-        cache_hit_pct = (total_cached / total_input * 100.0) if total_input > 0 else 0.0
-        if total_cached > 0:
-            cache_str = f" · 缓存命中 {total_cached:,} ({cache_hit_pct:.0f}%)"
+        # 命中率按「单次请求」算（last_input/last_cached_input）：把整轮各次请求
+        # 的分子分母分别相加，会让包含上一轮内容的请求重复计入共享前缀。
+        denom = data.get("last_input")
+        cached = data.get("last_cached_input")
+        if denom is None:  # 旧调用方没有单次字段时退回累计值
+            denom, cached = total_input, total_cached
+        denom = int(denom or 0)
+        cached = min(int(cached or 0), denom)
+        cache_hit_pct = (cached / denom * 100.0) if denom > 0 else 0.0
+        if cached > 0:
+            cache_str = f" · 缓存命中 {cached:,} ({cache_hit_pct:.0f}%)"
         else:
             cache_str = ""
 
@@ -492,9 +498,9 @@ class ConversationWidget(QWidget):
         )
         # Keep a full tooltip for details
         self._token_label.setToolTip(
-            f"输入 token：{total_input:,}\n"
-            f"  其中缓存命中：{total_cached:,}（{cache_hit_pct:.1f}%，按 10% 价格计费）\n"
-            f"  未命中缓存：{total_input - total_cached:,}（按原价计费）\n"
+            f"输入 token（本会话累计）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
+            f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%，按 10% 价格计费）\n"
+            f"  未命中：{denom - cached:,}（按原价计费）\n"
             f"输出 token：{total_output:,}\n"
             f"合计：{total_tokens:,}\n\n"
             "DeepSeek KV Cache 缓存命中的 token 按 10% 价格计费，可大幅降低 API 费用。"

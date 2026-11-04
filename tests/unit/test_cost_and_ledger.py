@@ -24,6 +24,37 @@ def test_ledger_accumulates_tokens():
     assert ledger.context_used == 430
 
 
+def test_breakdown_keeps_latest_call_for_cache_rate():
+    """整轮累计与最近一次请求必须分开：命中率要按单次请求算。"""
+    ledger = SessionTokenLedger(context_window=1_000_000)
+    ledger.add(_usage(60381, 100, cached=0))
+    ledger.add(_usage(119852, 100, cached=60288))
+    bd = ledger.breakdown()
+
+    # 累计值仍用于上下文用量与总开销
+    assert bd["total_input"] == 180233
+    assert bd["total_cached_input"] == 60288
+    # 命中率只取最近一次请求（阶段二），不能用 180233 作分母
+    assert bd["last_input"] == 119852
+    assert bd["last_cached_input"] == 60288
+
+
+def test_breakdown_without_calls_reports_zero_last_call():
+    ledger = SessionTokenLedger(context_window=1000)
+    bd = ledger.breakdown()
+    assert bd["last_input"] == 0
+    assert bd["last_cached_input"] == 0
+
+
+def test_reset_clears_last_call():
+    ledger = SessionTokenLedger(context_window=1000)
+    ledger.add(_usage(500, 10, cached=200))
+    ledger.reset()
+    bd = ledger.breakdown()
+    assert bd["last_input"] == 0
+    assert bd["last_cached_input"] == 0
+    assert bd["total_input"] == 0
+
 def test_ledger_breakdown_keys():
     ledger = SessionTokenLedger(context_window=10_000)
     ledger.add(_usage(1000, 500))
