@@ -50,6 +50,10 @@ python -m pa_agent.main
 
 > 若需运行测试（pytest）或代码格式化（ruff/black），额外安装：`pip install -e ".[dev]"`。
 
+**不想装 Python？** 直接下载 Release 里的 `PA_Agent-v*-win64.zip`，解压（建议放在非中文、非 Program Files 路径），
+双击 `PA_Agent.exe` 即可。首次启动会在 exe 同级生成 `config/settings.json`，在里面填 API Key。
+自行打包见 [打包与发布](docs/打包与发布.md)。
+
 ---
 
 ## 详细说明

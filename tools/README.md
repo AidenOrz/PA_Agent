@@ -13,6 +13,7 @@
 | `_inspect_pending.py` | 统计 `records/pending` 的重试次数、失败分布与最终去向 | `python tools/_inspect_pending.py` |
 | `_scan_pending_retries.py` | 只扫 `records/pending` 里的校验重试（assistant/user 往返次数与反馈内容） | `python tools/_scan_pending_retries.py` |
 | `setup_git_secrets.ps1` | 安装 `.githooks/` 下的 pre-commit 泄漏拦截 | `powershell -ExecutionPolicy Bypass -File tools\setup_git_secrets.ps1` |
+| `build_release.ps1` | 打包 Windows 桌面版并（可选）发布 GitHub Release；产物在 `dist/PA_Agent/`，详见 [打包与发布](../docs/打包与发布.md) | `powershell -ExecutionPolicy Bypass -File tools\build_release.ps1`；加 `-Publish -Tag v0.1.0` 可直接发版 |
 
 `_pending_order_report.txt`、`_tools_catalog.json`、`stage2_raw_sample.txt` 是历史调试输出，已被 `.gitignore` 忽略，不要提交。
 
