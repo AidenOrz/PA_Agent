@@ -64,6 +64,24 @@ python -m pa_agent.main
 
 ## 更新日志
 
+### 2026-11-04
+
+**首个 Windows 桌面版发布（v0.1.0）**
+
+- Release 提供免安装的 `PA_Agent-v0.1.0-win64.zip`（onedir，解压即用），打包流程见 [打包与发布](docs/打包与发布.md)
+- 提示词可直接改：把 `prompt_engineering/` 放到 exe 同级即覆盖内置版本，无需重打包
+
+**阶段二 KV 前缀缓存优化（命中率 19% → 预期 76%）**
+
+- 🔴 提示词按缓存前缀重排：静态策略库与输出契约前置，动态块后置，跨轮次公共前缀 30% → 76%
+- 新增 `prompt.stage2_cache_mode`（`standalone` 默认 / `chain`）
+- 🟠 界面缓存率分母改用单次请求，不再把阶段一 + 阶段二 prompt 相加
+
+**数据源**
+
+- 新增 Baostock（A 股，免费免 Key）与 Binance（加密货币现货，公开 REST）
+- 数据源清单收敛到 `pa_agent/data/sources_registry.py`
+
 ### 2026-11-02
 
 **修复（全面审查后的 P0/P1）**

@@ -136,6 +136,20 @@ CI 过去两年只执行 `import pa_agent`，等于从未验证过任何东西�
 `git clone --depth 1 file:///E:/PA_Agent .tmp-cleancheck` 再在克隆目录里跑一遍，才能暴露这类
 “依赖了未跟踪文件”的问题。
 
+## 二·五、v0.1.0 发布（2026-11-04）
+
+首个 Windows 桌面版已发布：<https://github.com/AidenOrz/PA_Agent/releases/tag/v0.1.0>，
+产物 `PA_Agent-v0.1.0-win64.zip`（165 MB，解压 390 MB，onedir）。
+
+- 打包链路：`PA_Agent.spec` + `tools/build_release.ps1`，说明见 `docs/打包与发布.md`
+- `pa_agent/config/paths.py` 拆成 `PROJECT_ROOT`（exe 同级，可写）与 `BUNDLE_ROOT`（`sys._MEIPASS`，只读），
+  提示词按「exe 同级 → 内置」解析，`PA_AGENT_PROMPT_DIR` 可覆盖；测试 `tests/unit/test_paths_frozen.py`
+- spec 的 `excludes` 是刻意清单：多余 Qt 绑定会直接中止构建，scipy 会拖进 dask/torch（980 MB → 390 MB）
+- 发布前的同批改动：阶段二提示词按缓存前缀重排、`prompt.stage2_cache_mode`、界面缓存率分母改用单次请求
+
+**已知限制**：未做代码签名（SmartScreen 提示未知发布者）；只有 onedir 无单文件版；
+MT5 数据源要求本机装 MT5 终端，否则日志出现 `IPC initialize failed, MetaTrader 5 x64 not found`（其它数据源正常）。
+
 ## 三、没做 / 已知遗留
 
 1. **ruff 剩余 198 条**未清理：都是需要逐条判断语义的（E402 延迟导入是刻意的循环依赖规避、SIM102
