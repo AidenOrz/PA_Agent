@@ -60,6 +60,7 @@ def test_stage2_txt_files_order() -> None:
     assert files[6:] == ["震荡区间分析识别.txt", "震荡区间交易策略.txt"]
     assert routed[0] in files
 
+
 def test_stage2_stable_and_routed_split() -> None:
     """Routed files must be separable: the router re-decides them every cycle."""
     routed = ["震荡区间交易策略.txt", "上涨通道分析识别.txt"]

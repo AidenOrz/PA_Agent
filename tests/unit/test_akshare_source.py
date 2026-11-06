@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pa_agent.data.akshare_source import (
     _akshare_adjust,
-    _resample_rows_to_4h,
     is_index_symbol,
     normalize_ashare_symbol,
 )
@@ -40,8 +39,14 @@ def test_resample_60m_to_4h():
     from pa_agent.data.ashare_common import resample_rows_to_4h as _shared
 
     rows = [
-        {"ts_open": _hour_ts(day, hour), "open": 10.0, "high": 11.0, "low": 9.0,
-         "close": 10.5, "volume": 1.0}
+        {
+            "ts_open": _hour_ts(day, hour),
+            "open": 10.0,
+            "high": 11.0,
+            "low": 9.0,
+            "close": 10.5,
+            "volume": 1.0,
+        }
         for day in ("2026-11-02", "2026-11-03")
         for hour in (10, 11, 14, 15)
     ]

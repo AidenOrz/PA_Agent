@@ -55,6 +55,7 @@ def test_reset_clears_last_call():
     assert bd["last_cached_input"] == 0
     assert bd["total_input"] == 0
 
+
 def test_ledger_breakdown_keys():
     ledger = SessionTokenLedger(context_window=10_000)
     ledger.add(_usage(1000, 500))

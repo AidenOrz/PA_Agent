@@ -61,12 +61,8 @@ def fake_baostock(monkeypatch: pytest.MonkeyPatch) -> _Capture:
     mod.query_history_k_data_plus = fake_query
     monkeypatch.setitem(sys.modules, "baostock", mod)
     # Bypass the locked session (login/logout); hand the query straight through.
-    monkeypatch.setattr(
-        ebm._BaostockSession, "execute", classmethod(lambda cls, label, fn: fn())
-    )
-    monkeypatch.setattr(
-        ebm, "_cn_now", lambda: datetime(2026, 11, 3, 20, 0, tzinfo=_CN)
-    )
+    monkeypatch.setattr(ebm._BaostockSession, "execute", classmethod(lambda cls, label, fn: fn()))
+    monkeypatch.setattr(ebm, "_cn_now", lambda: datetime(2026, 11, 3, 20, 0, tzinfo=_CN))
     return capture
 
 

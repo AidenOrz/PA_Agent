@@ -444,6 +444,7 @@ def test_stage2_user_prompt_puts_static_blocks_first(assembler: PromptAssembler)
     # otherwise every analysis cycle breaks the cached prefix early.
     assert pos_contract < pos_stance < pos_diag
 
+
 def test_stage2_prompt_includes_balanced_stance_guidance(assembler: PromptAssembler):
     frame = _make_frame()
     messages = assembler.build_stage2(frame, {}, [], [], decision_stance="balanced")

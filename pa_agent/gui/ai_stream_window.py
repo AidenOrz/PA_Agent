@@ -611,9 +611,7 @@ class AIStreamPanel(QWidget):
             self._worker = None
             self._sending = False
         else:
-            logger.warning(
-                "Chat worker still running after %dms; not destroying it", join_ms
-            )
+            logger.warning("Chat worker still running after %dms; not destroying it", join_ms)
 
     def _on_send(self) -> None:
         if self._session is None:

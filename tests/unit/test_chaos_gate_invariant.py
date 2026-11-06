@@ -60,9 +60,9 @@ def test_missing_or_non_proceed_gate_short_circuits():
     assert validate_chaos_gate_invariant({}) == []
     assert validate_chaos_gate_invariant({"gate_result": "wait"}) == []
     assert validate_chaos_gate_invariant({"gate_result": "proceed"}) == []
-    assert validate_chaos_gate_invariant(
-        {"gate_result": "proceed", "gate_trace": "not-a-list"}
-    ) == []
+    assert (
+        validate_chaos_gate_invariant({"gate_result": "proceed", "gate_trace": "not-a-list"}) == []
+    )
 
 
 def test_invariant_runs_even_when_coherence_checks_disabled():
@@ -80,7 +80,7 @@ def test_invariant_runs_even_when_coherence_checks_disabled():
         trace_semantic_checks=False,
     )
 
-    from tests.integration.conftest import VALID_STAGE1  # noqa: PLC0415
+    from tests.integration.conftest import VALID_STAGE1
 
     payload = dict(VALID_STAGE1)
     payload["gate_trace"] = [
