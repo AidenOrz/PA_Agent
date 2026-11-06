@@ -414,6 +414,16 @@ def test_stage2_standalone_mode_drops_stage1_chain(assembler: PromptAssembler):
     assert assembler.build_stage1(frame)[0]["content"] == messages[0]["content"]
 
 
+def test_stage2_cache_mode_default_is_chain() -> None:
+    """Shipped default is chain: production logs (2026-11-04/05) measured S2
+    standalone hit at 33-48% (routed files + re-sent K-line block dominate the
+    miss budget) while chain reuses the just-processed S1 prefix and drops the
+    K-line block via omit_kline_block. See config/README.md."""
+    from pa_agent.config.settings import Settings
+
+    assert Settings().prompt.stage2_cache_mode == "chain"
+
+
 def test_stage2_user_prompt_puts_static_blocks_first(assembler: PromptAssembler):
     """Static strategy files must lead the user turn so the KV prefix survives."""
     frame = _make_frame()
@@ -490,7 +500,7 @@ def test_incremental_stage1_prompt_includes_previous_record_and_new_bars(
 
     # 4-message continuation structure: system, user(prev S1), assistant(prev S1 reply), user(incremental)
     assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
-    # Message [1] is previous full Stage 1 user prompt, refreshed with market features
+    # Message [1] is previous full Stage 1 user prompt, reused verbatim
     assert "程序结构辅助特征" in messages[1]["content"]
     assert messages[1]["content"].startswith(prev_user.split("\n", 1)[0])
     # Message [2] is normalized bare JSON from validated stage1_diagnosis
@@ -518,6 +528,53 @@ def test_incremental_stage1_prompt_includes_previous_record_and_new_bars(
     assert "新增 K线数据" in incremental_user
     assert "完整窗口计算" in incremental_user
     assert "程序结构辅助特征以本消息为准" in incremental_user
+
+
+def test_incremental_stage1_prefix_is_byte_identical_to_original_request(
+    assembler: PromptAssembler,
+):
+    """KV prefix cache regression: the [system, user] head of an incremental
+    request must be byte-identical to the original Stage 1 request even when
+    the market-features block changed with new bars. The features block used
+    to be "refreshed" in place, breaking the DeepSeek prefix match; fresh
+    values ride in the incremental turn behind _MARKET_FEATURES_AUTHORITY_NOTE
+    instead."""
+    from pa_agent.records.schema import AnalysisRecord, RecordMeta
+
+    frame = _make_frame(5)
+    full_s1_messages = assembler.build_stage1(frame)
+    prev_assistant = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+    previous = AnalysisRecord(
+        meta=RecordMeta(
+            timestamp_local_iso="2026-01-01T00:00:00.000",
+            timestamp_local_ms=1,
+            symbol="XAUUSD",
+            timeframe="1h",
+            bar_count=5,
+            ai_provider={},
+        ),
+        kline_data=[],
+        htf_text="",
+        stage1_messages=full_s1_messages,
+        stage1_response={"content": prev_assistant},
+        stage1_diagnosis={"cycle_position": "normal_channel"},
+        stage2_messages=[],
+        stage2_response=None,
+        stage2_decision={"decision": {"order_type": "不下单"}},
+        strategy_files_used=["上涨通道分析识别.txt"],
+        experience_loaded=[],
+        exception=None,
+        usage_total={},
+    )
+
+    # A different frame (extra bar → different features/tables) triggers the
+    # old refresh-in-place behaviour; the prefix must survive it untouched.
+    messages = assembler.build_incremental_stage1(_make_frame(6), previous, 1)
+
+    assert messages[0]["content"] == full_s1_messages[0]["content"]
+    assert messages[1]["content"] == full_s1_messages[1]["content"]
+    # Fresh features still reach the model inside the incremental turn.
+    assert "以本消息为准" in messages[3]["content"]
 
 
 def test_incremental_stage1_normalizes_fenced_previous_response(

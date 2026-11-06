@@ -77,7 +77,7 @@
 | `prompt.experience_max_entries` | int | `3` | 经验库最大加载条目数（0–10） |
 | `prompt.experience_max_chars_per_entry` | int | `400` | 每条经验最大字符数（100–4000） |
 | `prompt.stage1_inject_pattern_briefs` | bool | `true` | 阶段一是否注入模式判定表和速查 brief（减少 missed tags） |
-| `prompt.stage2_cache_mode` | string | `"standalone"` | 阶段二请求形态：`standalone`=独立请求（静态策略块在前，跨轮复用长前缀，实测前缀复用 93.9%）；`chain`=接续阶段一消息（复用阶段一前缀，但 K 线一变即失效，实测 55.3%） |
+| `prompt.stage2_cache_mode` | string | `"chain"` | 阶段二请求形态：`chain`=接续阶段一消息（复用数秒前刚处理过的 S1 前缀，且 K 线表不重发；生产日志 2026-11-04/05 实测 standalone 仅 33–48%，chain 预期 ~68%）；`standalone`=独立请求（跨轮仅静态头 ~23K tokens 命中；旧文档 93.9% 为全策略库配置下所测，非实际部署形态） |
 
 ### validation — 校验与重试
 

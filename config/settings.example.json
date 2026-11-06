@@ -36,6 +36,7 @@
   },
   "prompt": {
     "stage2_load_full_strategy_library": false,
+    "stage2_cache_mode": "chain",
     "experience_max_entries": 0,
     "experience_max_chars_per_entry": 400,
     "stage1_inject_pattern_briefs": true

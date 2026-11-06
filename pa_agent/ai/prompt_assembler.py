@@ -1068,9 +1068,20 @@ class PromptAssembler:
 
     @staticmethod
     def _inject_market_features_block(prompt: str, frame: KlineFrame) -> str:
-        """Refresh or insert program market-features into a Stage 1 user prompt."""
+        """Insert program market-features into a Stage 1 user prompt if absent.
+
+        An existing section is deliberately left untouched: incremental requests
+        reuse the previous user message verbatim so the [system, user] prefix
+        stays byte-identical to the original Stage 1 request (DeepSeek KV prefix
+        cache). Fresh features still reach the model via the incremental turn,
+        which carries its own block tagged with _MARKET_FEATURES_AUTHORITY_NOTE.
+        """
+        from pa_agent.ai.market_features import MARKET_FEATURES_SECTION_PREFIX
+
         block = PromptAssembler._render_simple_market_features_block(frame)
         if not block:
+            return prompt
+        if MARKET_FEATURES_SECTION_PREFIX in prompt:
             return prompt
         return inject_market_features_section(prompt, block)
 

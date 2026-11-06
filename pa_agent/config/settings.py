@@ -52,12 +52,18 @@ class PromptSettings(BaseModel):
     #: When True, Stage 2 loads every strategy .txt (legacy/test behaviour).
     stage2_load_full_strategy_library: bool = False
     #: Stage 2 request shape.
-    #: "standalone" = [system, user(S2)] — static head (strategy library + output
-    #:   contract) stays byte-identical across analyses; measured cross-run prefix
-    #:   reuse 93.9% vs 55.3% for chain on the same inputs.
     #: "chain" = [system, user(S1), assistant(S1), user(S2)] — reuses the Stage 1
-    #:   turn, but that prefix dies as soon as one K line advances.
-    stage2_cache_mode: Literal["chain", "standalone"] = "standalone"
+    #:   turn processed seconds earlier, and omit_kline_block keeps the ~25K-token
+    #:   K-line/feature tables out of the S2 payload. Production logs (2026-11-04/05)
+    #:   measured S2 hit 33-48% under standalone vs ~68% expected for chain on the
+    #:   same routed-files config.
+    #: "standalone" = [system, user(S2)] — only the small static head (system +
+    #:   base files + contract, ~23K tokens) hits across analyses; the re-sent
+    #:   K-line block plus routed files push measured hit down to 33-48%. The
+    #:   93.9% figure in earlier notes was measured with the full strategy
+    #:   library loaded (stage2_load_full_strategy_library=true), which makes the
+    #:   static head dominate — not the deployed routed-files configuration.
+    stage2_cache_mode: Literal["chain", "standalone"] = "chain"
     experience_max_entries: int = Field(default=0, ge=0, le=10)
     experience_max_chars_per_entry: int = Field(default=400, ge=100, le=4000)
     #: Inject pattern判定表 + 速查 brief into Stage 1 user prompt (reduces missed tags).
