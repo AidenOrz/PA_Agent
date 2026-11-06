@@ -80,8 +80,21 @@ Compress-Archive -Path "dist\PA_Agent\*" -DestinationPath $Zip -CompressionLevel
 $sizeMb = [math]::Round((Get-Item $Zip).Length / 1MB, 1)
 Write-Host "产物：$Zip ($sizeMb MB)" -ForegroundColor Green
 
+Step "生成 SHA256 校验和"
+# 用户下载 165MB 的 zip 无从验证完整性；校验和文件随 zip 一起上传 Release，
+# 文件名 = zip 名 + .sha256.txt，内容格式与 `sha256sum` 兼容（hash  路径）。
+$ZipName = Split-Path -Leaf $Zip
+$Sha256 = (Get-FileHash -Path $Zip -Algorithm SHA256).Hash.ToLowerInvariant()
+$ShaFile = Join-Path $Root "dist\$ZipName.sha256.txt"
+Set-Content -Path $ShaFile -Value "$Sha256  $ZipName" -Encoding ascii
+Write-Host "校验和：$ShaFile" -ForegroundColor Green
+Write-Host "  $Sha256  $ZipName"
+
 if ($Publish) {
     Step "发布 GitHub Release $Tag"
+    if ($SkipTests) {
+        throw "-SkipTests 与 -Publish 不允许同时使用：跳过回归的构建不得直接发布"
+    }
     git rev-parse $Tag 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         git tag -a $Tag -m "PA Agent $Tag"
@@ -89,9 +102,9 @@ if ($Publish) {
     }
     gh release view $Tag 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        gh release upload $Tag $Zip --clobber
+        gh release upload $Tag $Zip $ShaFile --clobber
     } else {
-        gh release create $Tag $Zip --title "PA Agent $Tag" --generate-notes
+        gh release create $Tag $Zip $ShaFile --title "PA Agent $Tag" --generate-notes
     }
     if ($LASTEXITCODE -ne 0) { throw "GitHub Release 发布失败" }
 }

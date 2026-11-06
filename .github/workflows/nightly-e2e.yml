@@ -1,0 +1,48 @@
+name: Nightly e2e
+
+# e2e smoke 驱动 Qt 事件循环，历史上曾在 CI 环境挂死（需强杀进程），
+# 因此被挡在推送/PR CI 之外、只靠本地自觉——而这恰恰是最需要自动化兜底的
+# 区域。 nightly 定时跑一遍：挂死/崩溃在这里暴露，不污染日常 CI。
+# 手动触发：workflow_dispatch（发版前建议先跑一次）。
+
+on:
+  schedule:
+    - cron: "0 20 * * *" # UTC 20:00 = 北京时间次日 04:00，避开工作时段
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    concurrency:
+      group: nightly-e2e
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # QT_QPA_PLATFORM=minimal：headless Qt 说明见 ci.yml 的长注释。
+      # --timeout=120（pyproject 默认）保证单个用例挂死时整个 job 以失败
+      # 告终而不是无限等待；job 级 timeout-minutes 是第二道保险。
+      - name: Run e2e smoke
+        env:
+          QT_QPA_PLATFORM: minimal
+        run: python -m pytest tests/e2e -m "not live" -v --timeout=180
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-logs
+          path: |
+            logs/
+            artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
