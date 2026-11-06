@@ -239,9 +239,16 @@ def register_settings_secrets(settings: object | None) -> None:
     data-source credentials are loaded at the same time but were never masked,
     so a failing Feishu request logged the full hook URL (the credential) in
     clear text.
+
+    Each value also lands in the shared disk-secret registry so on-disk
+    writers (PendingWriter, debug exports) mask the same set as the log
+    formatter — the two sets used to diverge and follow-up records kept
+    plaintext tokens.
     """
     if settings is None:
         return
+    from pa_agent.util.mask_secret import register_disk_secret
+
     provider = getattr(settings, "provider", None)
     feishu = getattr(settings, "feishu", None)
     pushplus = getattr(settings, "pushplus", None)
@@ -255,4 +262,6 @@ def register_settings_secrets(settings: object | None) -> None:
         getattr(tushare, "token", ""),
     ]
     for value in values:
-        register_secret(str(value or ""))
+        text = str(value or "")
+        register_secret(text)
+        register_disk_secret(text)

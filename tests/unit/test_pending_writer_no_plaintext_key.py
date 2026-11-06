@@ -19,13 +19,23 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from pa_agent.records.pending_writer import PendingWriter
 from pa_agent.records.schema import AnalysisRecord, FollowupTurn, RecordMeta
-from pa_agent.util.mask_secret import mask_secret
+from pa_agent.util.mask_secret import clear_disk_secrets, mask_secret
 
 # A realistic-looking API key long enough that mask_secret produces a meaningful
 # masked form (all but last 4 chars become '*').
 API_KEY = "sk-plaintext123456789abcdef"
+
+
+@pytest.fixture(autouse=True)
+def _isolated_disk_secret_registry():
+    """The disk-secret registry is process-global; keep tests hermetic."""
+    clear_disk_secrets()
+    yield
+    clear_disk_secrets()
 
 
 def _make_record_with_key(api_key: str) -> AnalysisRecord:

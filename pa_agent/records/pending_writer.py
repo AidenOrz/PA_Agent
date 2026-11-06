@@ -150,19 +150,34 @@ class PendingWriter:
 
     @staticmethod
     def _sanitize(data: dict, api_key: str) -> dict:
-        """Recursively replace any occurrence of *api_key* in string values.
+        """Recursively replace every known secret in string values.
 
-        If *api_key* is empty, returns *data* unchanged.
+        *api_key* rides separately so key rotation via ``set_api_key`` takes
+        effect immediately; feishu/pushplus/tushare credentials come from the
+        shared disk-secret registry (``util.mask_secret``), fed by
+        ``register_settings_secrets`` at startup and on every settings save.
+        The registry used to be log-formatter-only: a webhook URL or PushPlus/
+        Tushare token pasted into the follow-up box landed in
+        ``records/pending/*.followups.jsonl`` in plaintext.
         Handles nested dicts, lists, and plain string values at any depth.
         """
-        if not api_key:
-            return data
+        from pa_agent.util.mask_secret import registered_disk_secrets
 
-        masked = mask_secret(api_key)
+        targets: list[tuple[str, str]] = []
+        if api_key:
+            targets.append((api_key, mask_secret(api_key)))
+        for secret in registered_disk_secrets():
+            if secret and secret != api_key:
+                targets.append((secret, mask_secret(secret)))
+        if not targets:
+            return data
 
         def _walk(node):
             if isinstance(node, str):
-                return node.replace(api_key, masked)
+                for secret, masked in targets:
+                    if secret in node:
+                        node = node.replace(secret, masked)
+                return node
             if isinstance(node, dict):
                 return {k: _walk(v) for k, v in node.items()}
             if isinstance(node, list):
