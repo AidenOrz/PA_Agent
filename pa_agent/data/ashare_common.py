@@ -433,15 +433,28 @@ def merge_ohlcv(chunk: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def resample_rows_to_4h(rows_asc: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Resample ascending 1h rows into A-share 4h bars anchored to the trading day.
+
+    A-share sessions produce exactly four 1h bars per trading day, so anchoring
+    on the Beijing trading date yields one 4h bucket per day.  The previous
+    position-based "every 4 rows" chunking drifts across midnight whenever the
+    caller tail-slices mid-day (all callers do ``rows[-(n*4+8):]`` first), which
+    stitched day k's afternoon onto day k+1's open: every historical bucket got
+    the next day's close.  Callers must pass rows of a single symbol ascending
+    by ``ts_open``.
+    """
     if not rows_asc:
         return []
     buckets: list[dict[str, Any]] = []
     chunk: list[dict[str, Any]] = []
+    current_date: datetime.date | None = None
     for row in rows_asc:
-        chunk.append(row)
-        if len(chunk) == 4:
+        row_date = bar_trade_date(int(row["ts_open"]))
+        if current_date is not None and row_date != current_date and chunk:
             buckets.append(merge_ohlcv(chunk))
             chunk = []
+        current_date = row_date
+        chunk.append(row)
     if chunk:
         buckets.append(merge_ohlcv(chunk))
     return buckets

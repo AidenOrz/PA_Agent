@@ -206,18 +206,15 @@ def _normalize_ohlcv_df(df: Any, *, time_col: str) -> Any:
 
 
 def _resample_rows_to_4h(rows_asc: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not rows_asc:
-        return []
-    buckets: list[dict[str, Any]] = []
-    chunk: list[dict[str, Any]] = []
-    for row in rows_asc:
-        chunk.append(row)
-        if len(chunk) == 4:
-            buckets.append(_merge_ohlcv(chunk))
-            chunk = []
-    if chunk:
-        buckets.append(_merge_ohlcv(chunk))
-    return buckets
+    """Delegate to the shared trading-day-anchored resampler.
+
+    The private position-based copy stitched day k's afternoon onto day k+1's
+    open whenever the caller tail-sliced mid-day; A-share 4h buckets must stay
+    inside one Beijing trading day.
+    """
+    from pa_agent.data.ashare_common import resample_rows_to_4h
+
+    return resample_rows_to_4h(rows_asc)
 
 
 def _merge_ohlcv(chunk: list[dict[str, Any]]) -> dict[str, Any]:
