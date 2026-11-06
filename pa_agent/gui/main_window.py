@@ -413,6 +413,10 @@ class MainWindow(QMainWindow):
         self._pending_submit_symbol = ""
         self._pending_submit_timeframe = ""
         self._pending_submit_bar_count = 0
+        # 品种/周期 combo 的纯 Python str 缓存：worker 线程（追问快照、TV
+        # 探测回调）不得触碰 QComboBox，只读这份由 GUI 线程信号同步的缓存。
+        self._cached_symbol_text = ""
+        self._cached_tf_text = ""
         self._last_forming_ts_open: int | None = None
         self._last_frame_ready_bars: list[Any] | None = None
         self._auto_incremental_pending: bool = False
@@ -836,11 +840,7 @@ class MainWindow(QMainWindow):
             # data subscription change.  The user must click 「获取数据」 or
             # 「提交分析」 to apply the new symbol/timeframe.
             sym_line.editingFinished.connect(self._update_symbol_data_alert)
-        self._tf_combo.currentTextChanged.connect(
-            lambda _: self._on_symbol_or_tf_changed(
-                self._symbol_combo.currentText(), self._tf_combo.currentText()
-            )
-        )
+        self._tf_combo.currentTextChanged.connect(self._on_tf_combo_changed)
 
         return tab
 
@@ -1339,7 +1339,9 @@ class MainWindow(QMainWindow):
         """
         from PyQt6.QtCore import Q_ARG, QMetaObject, Qt
 
-        timeframe = self._tf_combo.currentText() if hasattr(self, "_tf_combo") else ""
+        # RefreshLoop 线程里不得读 QComboBox（此前在 invokeMethod 之前就读了）；
+        # 用 GUI 线程信号同步的 str 缓存代替。
+        timeframe = self._current_timeframe_text()
         msg = f"TV 自动探测 {label} {timeframe}…"
         # Update status bar on main thread to avoid race with other updates
         QMetaObject.invokeMethod(
@@ -1624,10 +1626,40 @@ class MainWindow(QMainWindow):
 
     def _on_symbol_combo_text_changed(self, _text: str = "") -> None:
         """Update the alert label while the user is typing; no longer triggers subscription."""
+        self._cached_symbol_text = self._symbol_combo.currentText().strip()
         self._update_symbol_data_alert()
         # Debounce the alert refresh for slow typists
         if self._symbol_switch_timer is not None:
             self._symbol_switch_timer.start()
+
+    def _current_symbol_text(self) -> str:
+        """Symbol combo text, safe to call from any thread.
+
+        Worker threads (follow-up snapshot frame building, TV probe status
+        callbacks on the RefreshLoop thread) must not touch QComboBox: they
+        read the plain-str cache kept in sync by the GUI-thread combo signal
+        handler instead.
+        """
+        from PyQt6.QtCore import QThread
+
+        if QThread.currentThread() is self.thread():
+            return self._symbol_combo.currentText().strip()
+        return str(getattr(self, "_cached_symbol_text", "") or "").strip()
+
+    def _current_timeframe_text(self) -> str:
+        """Timeframe combo text, safe to call from any thread (see above)."""
+        from PyQt6.QtCore import QThread
+
+        if QThread.currentThread() is self.thread():
+            return self._tf_combo.currentText()
+        return str(getattr(self, "_cached_tf_text", "") or "")
+
+    def _on_tf_combo_changed(self, text: str) -> None:
+        """Cache the tf text for worker threads, then run the switch flow."""
+        self._cached_tf_text = text
+        self._on_symbol_or_tf_changed(
+            self._symbol_combo.currentText(), self._tf_combo.currentText()
+        )
 
     def _on_symbol_combo_editing_finished(self) -> None:
         """Update the alert label when the user leaves the symbol field.
@@ -1889,8 +1921,9 @@ class MainWindow(QMainWindow):
 
         if not bars or len(bars) < bar_count:
             return False
-        timeframe = self._tf_combo.currentText()
-        symbol = self._symbol_combo.currentText().strip()
+        # Thread-safe getters: this also runs on the follow-up worker thread.
+        timeframe = self._current_timeframe_text()
+        symbol = self._current_symbol_text()
         if has_forming_bar_at_head(
             bars,
             timeframe,
@@ -4592,6 +4625,11 @@ class MainWindow(QMainWindow):
             self._cancel_snapshot_fetch_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             # 后台 TV 探测线程：断开信号后再 join，避免结果回到已销毁的控件。
             self._cancel_tv_probe_worker(join_ms=_TV_PROBE_JOIN_TIMEOUT_MS)
+            # 追问线程此前被漏掉：以面板为父对象的 _ChatWorker 若在运行中被
+            # 析构会 qFatal abort，且线程还在写追问落盘文件。
+            panel = getattr(self, "_stream_panel", None)
+            if panel is not None:
+                panel.shutdown_chat_worker(join_ms=_WORKER_JOIN_TIMEOUT_MS)
             self._stop_refresh_loop()
         except Exception as exc:
             logger.warning("Shutdown cleanup skipped: %s", exc)
@@ -5056,8 +5094,10 @@ class MainWindow(QMainWindow):
         from pa_agent.data.snapshot import build_display_frame, build_live_frame
 
         n = bar_count if bar_count is not None else self._analysis_bar_count()
-        symbol = self._symbol_combo.currentText().strip()
-        timeframe = self._tf_combo.currentText()
+        # Thread-safe getters: frame building also runs on the follow-up
+        # worker thread, which must not touch QComboBox.
+        symbol = self._current_symbol_text()
+        timeframe = self._current_timeframe_text()
         now_ms = self._reference_now_ms()
         if not bars_raw:
             return None

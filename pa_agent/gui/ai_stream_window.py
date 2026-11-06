@@ -582,6 +582,39 @@ class AIStreamPanel(QWidget):
         else:
             self._on_send()
 
+    def shutdown_chat_worker(self, join_ms: int = 1000) -> None:
+        """Cancel an in-flight follow-up and reap its thread before teardown.
+
+        closeEvent used to skip this worker entirely: the QThread is parented
+        to this panel, so destroying it mid-run is a hard Qt abort
+        (qFatal "QThread: Destroyed while thread is still running"), and the
+        worker keeps writing follow-up records until the process dies.
+        Follows the house worker-shutdown protocol: set token → disconnect
+        signals → bounded join → deleteLater once stopped.
+        """
+        if self._cancel_token is not None:
+            self._cancel_token.set()
+        worker = self._worker
+        if worker is None:
+            return
+        try:
+            worker.finished.disconnect()
+            worker.error.disconnect()
+            worker.reasoning_token.disconnect()
+            worker.content_token.disconnect()
+        except (TypeError, RuntimeError):
+            pass  # already disconnected or the underlying C++ object is gone
+        if worker.isRunning():
+            worker.wait(join_ms)
+        if not worker.isRunning():
+            worker.deleteLater()
+            self._worker = None
+            self._sending = False
+        else:
+            logger.warning(
+                "Chat worker still running after %dms; not destroying it", join_ms
+            )
+
     def _on_send(self) -> None:
         if self._session is None:
             return
