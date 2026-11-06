@@ -11,6 +11,7 @@ from pa_agent.data.base import DataSourceTransientError
 from pa_agent.data.tushare_source import (
     TushareSource,
     display_tushare_symbol,
+    is_tushare_index,
     normalize_tushare_symbol,
 )
 
@@ -22,6 +23,28 @@ def test_normalize_tushare_symbol() -> None:
     assert normalize_tushare_symbol("688981") == "688981.SH"
     assert normalize_tushare_symbol("430047") == "430047.BJ"
     assert normalize_tushare_symbol("600519.SH") == "600519.SH"
+
+
+def test_normalize_tushare_symbol_sse_index_suffixes() -> None:
+    """上证系指数后缀是 .SH：早前只有 000300 被特判，其余错挂 .SZ 请求恒空。"""
+    assert normalize_tushare_symbol("000016") == "000016.SH"  # 上证50
+    assert normalize_tushare_symbol("000300") == "000300.SH"  # 沪深300
+    assert normalize_tushare_symbol("000905") == "000905.SH"  # 中证500
+    assert normalize_tushare_symbol("000852") == "000852.SH"  # 中证1000
+    # 深证系指数仍是 .SZ
+    assert normalize_tushare_symbol("399001") == "399001.SZ"
+    assert normalize_tushare_symbol("399006") == "399006.SZ"
+
+
+def test_is_tushare_index_covers_sz_series() -> None:
+    """399xxx 深证/创业板系列在 Tushare 全部是指数（asset='I'）。"""
+    assert is_tushare_index("000300.SH")
+    assert is_tushare_index("000905.SH")
+    assert is_tushare_index("399001.SZ")
+    assert is_tushare_index("399006.SZ")
+    # 000001 有歧义（平安银行 vs 上证指数），维持个股处理
+    assert not is_tushare_index("000001.SZ")
+    assert not is_tushare_index("600519.SH")
 
 
 def test_display_tushare_symbol() -> None:

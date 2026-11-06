@@ -69,7 +69,12 @@ def normalize_tushare_symbol(symbol: str) -> str:
     digits = re.sub(r"\D", "", raw)
     if len(digits) != 6:
         return digits
-    if digits.startswith(("600", "601", "603", "605", "688", "689", "900", "000300")):
+    # 上证系指数（000016 上证50 / 000300 沪深300 / 000905 中证500 / 000852
+    # 中证1000）后缀是 .SH：早前只有 000300 被特判，其余落入 000→.SZ 分支
+    # 请求 000016.SZ 恒空。
+    if digits in TV_SSE_INDEX_CODES or digits.startswith(
+        ("600", "601", "603", "605", "688", "689", "900")
+    ):
         return f"{digits}.SH"
     if digits.startswith(("000", "001", "002", "003", "300", "301", "200", "399")):
         return f"{digits}.SZ"
@@ -84,17 +89,20 @@ def display_tushare_symbol(ts_code: str) -> str:
 
 
 def is_tushare_index(ts_code: str) -> bool:
-    """True for SSE index codes (000300 沪深300, 000905 中证500, ...).
+    """True for Tushare index codes needing ``asset='I'``.
 
-    Tushare marks these with ``asset='I'``; requesting them as equities via
-    ``pro_bar(asset='E')`` returns an empty frame.
+    Covers the SSE set (000300 沪深300, 000905 中证500, ...) and the whole
+    399xxx 深证/创业板 series (399001 深证成指, 399006 创业板指, ...): Tushare
+    serves those with ``asset='I'``; requesting them as equities via
+    ``pro_bar(asset='E')`` returns an empty frame.  000001 is deliberately
+    ambiguous (平安银行 vs 上证指数) and stays an equity.
     """
     digits = (ts_code or "").strip().upper().split(".", 1)[0]
     if len(digits) != 6 or not digits.isdigit():
         return False
-    if not digits.startswith("000"):
-        return False
-    return digits in TV_SSE_INDEX_CODES or digits.startswith("0009")
+    if digits in TV_SSE_INDEX_CODES or digits.startswith("0009"):
+        return True
+    return digits.startswith("399")
 
 
 def _trade_date_to_ts_ms(value: object) -> int:
