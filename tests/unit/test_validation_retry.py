@@ -46,6 +46,29 @@ def test_detect_cheat_immutable_direction():
     assert any("direction" in f for f in flags)
 
 
+def test_parse_previous_for_cheat_survives_markdown_fences():
+    """带 ```json 围栏的上一轮回复必须仍可解析：原样 json.loads 会静默关闭篡改检测。
+
+    历史 fail-open：fenced 文本 -> parse_previous_for_cheat -> None ->
+    detect_cheat 返回 []，模型在重试时反转 direction/gate_result 不会被拦截。
+    """
+    from pa_agent.ai.retry_feedback import parse_previous_for_cheat
+
+    fenced = (
+        "```json\n"
+        '{"direction": "bullish", "cycle_position": "spike", "gate_result": "proceed"}\n'
+        "```"
+    )
+    obj = parse_previous_for_cheat(fenced)
+    assert obj is not None
+    assert obj["direction"] == "bullish"
+
+    before = {"direction": "bullish", "gate_result": "proceed"}
+    after = {"direction": "bearish", "gate_result": "proceed"}
+    flags = detect_cheat("stage1", before, after)
+    assert any("direction" in f for f in flags)
+
+
 def test_detect_cheat_no_false_positive_when_program_normalizes_direction():
     """Raw AI direction may differ from post-normalize value; compare normalized copies."""
     from pa_agent.ai.json_validator import JsonValidator

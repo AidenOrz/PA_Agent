@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
+from pa_agent.ai.json_validator import _strip_fences
 from pa_agent.ai.validation_messages import format_validation_errors
 
 StageLit = Literal["stage1", "stage2"]
@@ -30,7 +31,11 @@ _FORBIDDEN_STAGE2 = (
 
 
 def _try_parse_obj(raw: str) -> dict[str, Any] | None:
-    text = (raw or "").strip()
+    # Fence-stripped with the same helper the validator uses: a ```json-fenced
+    # previous reply used to fall through unparsed, silently disabling cheat
+    # detection for exactly the retry shapes the feedback tells the model to
+    # produce.  parse_previous_for_cheat -> None meant detect_cheat -> [].
+    text = _strip_fences((raw or "").strip())
     if not text.startswith("{"):
         return None
     try:
