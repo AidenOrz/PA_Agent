@@ -1,21 +1,23 @@
 # PA Agent 交接文档
 
-> 更新：2026-11-03 ｜ 已全部合入 `main` 并推送（`c82254e`），CI 首次跑通
-> 上一版停留在 2026-09-03 的修复中途（当时 `30 failed / 649 passed / 38 errors`），
-> 本版按「接受一次全面审查 → 依次修 P0/P1/P2/P3」的推进结果重写。
+> 更新：2026-11-07 ｜ 全面审查修复轮完成（分支 `dev/review-fixes`，10 个修复提交）
+> 2026-11-03 版记录的 P0/P1/P2/P3 清理与 v0.1.0 发布见下文「二·五」及更早章节；
+> 本轮是又一次全面审查（5 路并行 + 本地实测）后对 P0/P1 的清零，报告见
+> `docs/代码审阅报告_2026-11-07.md`。
 
 ## 一、当前状态（实测）
 
 | 项目 | 结果 | 命令 |
 |------|------|------|
-| 非 live 测试 | **934 passed / 38 skipped / 0 failed** | `python -m pytest -m "not live" --ignore=tests/e2e` |
+| 全量测试 | **1024 collected / 0 failed**（全绿，含 e2e） | `python -m pytest -q` |
 | e2e smoke | **4 passed**（无挂起） | `python -m pytest tests/e2e` |
-| ruff | 196 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
-| black | 全部通过（282 个文件） | `python -m black --check pa_agent tests tools` |
-| CI | 首次通过（windows-latest / Python 3.11 / `QT_QPA_PLATFORM=minimal`） | `gh run view 41478417351` |
-| 规模 | 137 个源文件 / 140 个测试文件（其中 127 个 `test_*.py`）/ 145 次提交 | — |
+| ruff | 197 条剩余（多为 E402 延迟导入、SIM102 可合并 if），无自动修复项 | `python -m ruff check pa_agent tests tools` |
+| black | 全部通过（286 个文件） | `python -m black --check pa_agent tests tools` |
+| uv.lock | `uv lock --check` 通过 | — |
+| CI | 推送/PR 跑测试；e2e 由 nightly workflow 覆盖（定时+手动） | `.github/workflows/` |
+| 规模 | 137 个源文件 / 129 个 `test_*.py` | — |
 
-审查开始时的基线是 743 passed / 39 skipped / **6 failed**，e2e 4 个全部挂死（需强杀进程）。
+2026-11-03 审查开始时的基线是 743 passed / 39 skipped / **6 failed**，e2e 4 个全部挂死（需强杀进程）。
 
 ### 新增数据源（分支 `dev/data-sources-baostock-binance`）
 
@@ -150,9 +152,47 @@ CI 过去两年只执行 `import pa_agent`，等于从未验证过任何东西�
 **已知限制**：未做代码签名（SmartScreen 提示未知发布者）；只有 onedir 无单文件版；
 MT5 数据源要求本机装 MT5 终端，否则日志出现 `IPC initialize failed, MetaTrader 5 x64 not found`（其它数据源正常）。
 
+## 二·六、全面审查修复轮（2026-11-07，分支 `dev/review-fixes`）
+
+又一次全量审查（5 路并行深审 + 本地实测，报告 `docs/代码审阅报告_2026-11-07.md`），
+P0×1 与 P1×9 全部修复，每项独立提交（含回归测试）：
+
+1. **P0 成交量量纲**：`eastmoney_baostock.py` 的日/分钟兜底原样返回 Baostock 的「股」，
+   而东财日线 qfq 默认走该兜底、分钟线超东财滚动窗口也切兜底 → 同一张图成交量单位
+   随路径在 手/股 之间翻转。换算收敛到 `ashare_common.baostock_shares_to_lots`（NaN 防御），
+   `BaostockSource` 同步改用共享实现。
+2. **4h 重采样交易日锚点**：按位置每 4 根切桶无锚点，调用方全是「尾部切片再重采样」，
+   盘中每个历史桶 = 第 k 日下午 + 第 k+1 日首根（收盘价属于下一天）。现按北京交易日分组；
+   akshare 的私有副本一并委托共享实现。
+3. **Tushare 指数**：`000016/000905/000852` 误挂 `.SZ` 恒空（此前仅 000300 特判）；
+   `399xxx` 深证系被当个股 `asset='E'` 同样恒空。000001（平安银行 vs 上证指数）有歧义，
+   刻意维持个股处理。
+4. **周/月线 forming 口径**：`ashare_head_bar_live` 此前对 1w/1M 走日内 session_open，
+   15:00 后半截周线被当已收盘 K1，且与 Baostock 口径相反。现统一到周期末 15:00
+   （`ashare_week_close/month_close/same_iso_week`），支持头行 ts 防止上一周期 bar 被复活；
+   东财/AkShare 调用点补传 ts，Baostock 委托共享实现。
+5. **篡改检测 fail-open**：`parse_previous_for_cheat` 对 ```json 围栏原文直接 `json.loads`
+   → 检测静默失效，重试时可反转 direction/gate_result。现与 validator 同源先 `_strip_fences`。
+6. **§1.3/§1.2 闸门不变量**：`validate_chaos_gate_invariant` 从 stage1 校验器**无条件**调用
+   （不走 `stage1_coherence_checks` 开关——生产默认关闭，只挂在那等于没有）。测试夹具
+   `make_mandatory_gate_trace_proceed` 此前给 §1.3 也填「是」，等于整套夹具编码了旧 bug，已修正。
+7. **GUI 线程**：closeEvent 补停追问 `_ChatWorker`（漏掉会在运行中析构 QThread → qFatal，
+   且线程还在写追问落盘）；追问快照/TV 探测三处跨线程读 QComboBox 收口为 GUI 线程
+   信号同步的 str 缓存。
+8. **落盘脱敏**：`util.mask_secret` 新增进程级 disk-secret 注册表，日志 formatter 与
+   `PendingWriter._sanitize` 消费同一集合——飞书 webhook / PushPlus / Tushare token
+   粘进追问框不再明文入 `records/pending/*.followups.jsonl`。
+9. **S2 缓存模式**：默认 standalone → chain。依据是生产日志（11-04/05 实测 S2 standalone
+   命中仅 33–48%，混合 ~53%），旧文档 93.9% 为全策略库配置所测；chain 复用刚处理过的
+   S1 前缀且 `omit_kline_block` 免重发 K 线表。同时修复增量续链原位刷新特征块破坏
+   逐字节前缀（P3-6 → 已修，新特征由增量轮携带权威说明送达）。
+10. **构建/CI**：release zip 附 SHA256（`-SkipTests` 与 `-Publish` 互斥）；e2e 收进
+    `nightly-e2e.yml`（定时 + 手动，timeout 双保险，失败上传日志）。
+11. 样式：black 全仓收敛（此前 3 个测试文件漂移），ruff 维持基线 197 条。
+
 ## 三、没做 / 已知遗留
 
-1. **ruff 剩余 198 条**未清理：都是需要逐条判断语义的（E402 延迟导入是刻意的循环依赖规避、SIM102
+1. **ruff 剩余 197 条**未清理：都是需要逐条判断语义的（E402 延迟导入是刻意的循环依赖规避、SIM102
    合并 if 会改变可读性）。CI 里该步骤仍是 `continue-on-error: true`（advisory）。
 2. **`pa_agent/records/pending_writer` 的历史 pending 归一化**会把 `stale` 洗成 `pending`，未动。
 3. **`decision_nodes` 的若干 `return []` 早退**只修了会改变下单结论的那几处，其余保留。

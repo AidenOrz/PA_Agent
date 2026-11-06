@@ -64,6 +64,21 @@ python -m pa_agent.main
 
 ## 更新日志
 
+### 2026-11-07
+
+**全面审查修复轮（P0/P1 全部关闭，分支 `dev/review-fixes`）**
+
+审阅报告见 [`docs/代码审阅报告_2026-11-07.md`](docs/代码审阅报告_2026-11-07.md)。
+
+- 🔴 **P0** 东财 Baostock 兜底成交量未换算（股/手差 100 倍）：东财日线 qfq 默认走该兜底、分钟线超窗口也切兜底，同一张图成交量单位随路径翻转，放量判断全部失真。换算收敛到 `ashare_common.baostock_shares_to_lots`（带 NaN 防御）
+- 🟠 **P1 数据层** A股 4h 重采样改按交易日锚定（此前按位置每 4 根切桶，盘中所有历史桶跨日拼接、收盘价属于下一天）；Tushare 上证系指数后缀（000016/000905/000852 误挂 .SZ 恒空）与 399 深证系指数识别（被当个股请求恒空）；周/月线 forming 口径统一到周期末 15:00（此前 15:00 后半截周线被当已收盘 K1，且东财/AkShare 与 Baostock 口径相反）
+- 🟠 **P1 AI 管线** 重试篡改检测对 markdown 围栏输出 fail-open（fenced JSON 解析失败 → 检测静默失效）；§1.3/§1.2 混乱闸门补程序侧不变量 `validate_chaos_gate_invariant`（coherence 检查关闭时仍生效），「极端混乱却 proceed」现在会被拒绝
+- 🟠 **P1 GUI** closeEvent 补停追问线程（此前漏掉：运行中 QThread 被析构会 qFatal abort，且线程还在写追问落盘）；追问快照/TV 探测回调三处跨线程读 QComboBox 收口（改为读 GUI 线程同步的 str 缓存）
+- 🟠 **P1 安全** 追问落盘脱敏接入共享凭据注册表（`util.mask_secret`）：飞书 webhook、PushPlus/Tushare token 粘进追问框不再明文写入 `records/pending/*.followups.jsonl`
+- 🟠 **P1 缓存** `stage2_cache_mode` 默认 standalone → chain（生产日志实测 standalone S2 命中仅 33-48%，chain 复用刚处理过的 S1 前缀且免重发 K 线表；旧文档 93.9% 为全策略库配置所测）；修复增量续链的原位刷新破坏逐字节前缀（`build_incremental_stage1`）
+- 🟠 **P1 构建** Release 产物附 SHA256 校验和（`-SkipTests` 与 `-Publish` 互斥）；e2e smoke 收进 nightly CI（`workflow_dispatch` 可手动触发）
+- 样式：black 全仓收敛（此前 3 个测试文件漂移），ruff 维持基线 197 条
+
 ### 2026-11-04
 
 **首个 Windows 桌面版发布（v0.1.0）**
