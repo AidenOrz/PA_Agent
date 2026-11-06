@@ -137,6 +137,21 @@ def quote_volume_lots_to_shares(lots: float, *, symbol: str = "") -> float:
     return float(lots) * 100.0
 
 
+def baostock_shares_to_lots(shares: float) -> float:
+    """Convert Baostock bar volume (股) to the 手 every other A-share source uses.
+
+    Shared by the standalone BaostockSource and the East Money Baostock
+    fallback: Baostock reports 成交量 in 股, and an unconverted fallback makes
+    volume swing 100x depending on which path served the bar.
+    """
+    out = float(shares) if shares is not None else 0.0
+    if out != out:  # NaN guard — `x or 0.0` does not catch float("nan")
+        return 0.0
+    if out <= 0:
+        return 0.0
+    return out / 100.0
+
+
 _REFERENCE_INDEX_CODE = "000300"
 
 

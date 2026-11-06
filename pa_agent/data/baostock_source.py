@@ -21,6 +21,7 @@ from typing import Any
 
 from pa_agent.data.ashare_common import (
     ashare_head_bar_live,
+    baostock_shares_to_lots as _shares_to_lots,
     bar_trade_date,
     cn_now,
     index_symbol_for_api,
@@ -119,13 +120,6 @@ def _float_of(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return out if out == out else 0.0  # NaN guard
-
-
-def _shares_to_lots(shares: float) -> float:
-    """Baostock reports 成交量 in 股; every other A-share source here uses 手."""
-    if shares <= 0:
-        return 0.0
-    return float(shares) / 100.0
 
 
 def _week_close(now: datetime) -> datetime:

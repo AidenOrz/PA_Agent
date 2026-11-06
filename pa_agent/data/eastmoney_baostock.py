@@ -11,6 +11,9 @@ from datetime import timedelta
 from typing import Any, TypeVar
 
 from pa_agent.data.ashare_common import (
+    baostock_shares_to_lots as _shares_to_lots,
+)
+from pa_agent.data.ashare_common import (
     cn_now as _cn_now,
 )
 from pa_agent.data.ashare_common import (
@@ -247,7 +250,11 @@ def fetch_daily_history_baostock(symbol: str, n: int) -> list[dict[str, Any]]:
     cols = [x.strip() for x in ["date", "code", "open", "high", "low", "close", "volume"]]
     df = pd.DataFrame(data, columns=cols)
     norm = _normalize_ohlcv_df(df, time_col="date")
-    return _df_to_bars_asc(norm, time_col="date")[-n:]
+    rows = [
+        {**row, "volume": _shares_to_lots(float(row.get("volume", 0.0) or 0.0))}
+        for row in _df_to_bars_asc(norm, time_col="date")
+    ]
+    return rows[-n:]
 
 
 def fetch_minute_history_baostock(
@@ -321,4 +328,8 @@ def fetch_minute_history_baostock(
         norm = _normalize_ohlcv_df(df, time_col="date")
         rows = _df_to_bars_asc(norm, time_col="date")
 
-    return rows[-n:]
+    # Baostock reports volume in 股; every other A-share source uses 手.
+    return [
+        {**row, "volume": _shares_to_lots(float(row.get("volume", 0.0) or 0.0))}
+        for row in rows[-n:]
+    ]
