@@ -74,3 +74,47 @@ def test_market_open_false_on_weekend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ac, "ashare_trading_day", lambda now=None: False)
     monkeypatch.setattr(ac, "reference_index_traded_today", lambda now=None: True)
     assert ac.ashare_market_open_today(_weekday_midday()) is False
+
+
+def _ts(day: str, hour: int, minute: int = 0) -> int:
+    d = datetime.fromisoformat(day)
+    return int(d.replace(hour=hour, minute=minute, tzinfo=_CN).timestamp() * 1000)
+
+
+def test_weekly_head_stays_forming_past_daily_close():
+    """周三 20:00 周线仍在成形：旧逻辑走日内 session_open，15:00 后误标已收盘。"""
+    # 2026-11-04 周三，2026-11-06 周五
+    assert ac.ashare_head_bar_live("1w", datetime(2026, 11, 4, 20, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-02", 9, 30)) is True
+    assert ac.ashare_head_bar_live("1w", datetime(2026, 11, 6, 14, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-02", 9, 30)) is True
+
+
+def test_weekly_head_closes_at_friday_1500():
+    assert ac.ashare_head_bar_live("1w", datetime(2026, 11, 6, 15, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-02", 9, 30)) is False
+    assert ac.ashare_head_bar_live("1w", datetime(2026, 11, 7, 10, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-06", 9, 30)) is False
+
+
+def test_weekly_stale_head_not_remarked_forming():
+    """头行属于上一 ISO 周时即使还在周五 15:00 前也不能标 forming。"""
+    # 2026-11-10 周二：头行是 11-06（上周五）→ 已收盘
+    assert ac.ashare_head_bar_live("1w", datetime(2026, 11, 10, 10, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-06", 9, 30)) is False
+
+
+def test_monthly_head_follows_period_end():
+    """月线整个月内成形，月末 15:00 收；上月头行不得复活。"""
+    assert ac.ashare_head_bar_live("1M", datetime(2026, 11, 20, 10, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-02", 9, 30)) is True
+    assert ac.ashare_head_bar_live("1M", datetime(2026, 11, 30, 16, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-02", 9, 30)) is False
+    assert ac.ashare_head_bar_live("1M", datetime(2026, 12, 1, 10, 0, tzinfo=_CN),
+                                   head_ts_open_ms=_ts("2026-11-02", 9, 30)) is False
+
+
+def test_daily_and_intraday_unchanged():
+    assert ac.ashare_head_bar_live("1d", datetime(2026, 11, 4, 12, 0, tzinfo=_CN)) is True
+    assert ac.ashare_head_bar_live("1d", datetime(2026, 11, 4, 20, 0, tzinfo=_CN)) is False
+    assert ac.ashare_head_bar_live("15m", datetime(2026, 11, 4, 12, 0, tzinfo=_CN)) is False

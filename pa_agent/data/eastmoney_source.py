@@ -229,8 +229,12 @@ class EastMoneySource(DataSource):
             self._apply_spot_to_forming(rows_asc)
 
         rows_newest = list(reversed(rows_asc[-fetch_n:]))
+        head_ts = rows_newest[0].get("ts_open") if rows_newest else None
         for i, row in enumerate(rows_newest):
-            row["closed"] = not (i == 0 and _ashare_head_bar_live(self._timeframe))
+            row["closed"] = not (
+                i == 0
+                and _ashare_head_bar_live(self._timeframe, head_ts_open_ms=head_ts)
+            )
 
         bars = _rows_to_kline_bars(rows_newest, n)
         self._snap_cache_n = n

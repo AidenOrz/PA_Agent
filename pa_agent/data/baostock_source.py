@@ -12,7 +12,6 @@ Both this source and the East Money fallback share that session.
 
 from __future__ import annotations
 
-import calendar
 import logging
 import os
 import time
@@ -21,7 +20,6 @@ from typing import Any
 
 from pa_agent.data.ashare_common import (
     ashare_head_bar_live,
-    baostock_shares_to_lots as _shares_to_lots,
     bar_trade_date,
     cn_now,
     index_symbol_for_api,
@@ -29,6 +27,9 @@ from pa_agent.data.ashare_common import (
     normalize_ashare_symbol,
     resample_rows_to_4h,
     rows_to_kline_bars,
+)
+from pa_agent.data.ashare_common import (
+    baostock_shares_to_lots as _shares_to_lots,
 )
 from pa_agent.data.base import (
     DataSource,
@@ -122,38 +123,19 @@ def _float_of(value: Any) -> float:
     return out if out == out else 0.0  # NaN guard
 
 
-def _week_close(now: datetime) -> datetime:
-    monday = (now - timedelta(days=now.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    return (monday + timedelta(days=4)).replace(hour=15)
-
-
-def _month_close(now: datetime) -> datetime:
-    last_day = calendar.monthrange(now.year, now.month)[1]
-    return now.replace(day=last_day, hour=15, minute=0, second=0, microsecond=0)
-
-
-def _same_iso_week(ts_open_ms: int, now: datetime) -> bool:
-    opened = datetime.fromtimestamp(int(ts_open_ms) / 1000, tz=now.tzinfo)
-    return opened.isocalendar()[:2] == now.isocalendar()[:2]
-
-
 def head_bar_still_forming(ts_open_ms: int, timeframe: str, now: datetime | None = None) -> bool:
     """Whether the newest Baostock row is a bar the exchange is still filling.
 
     Baostock stamps a weekly bar with the last trading day inside that week
     and a monthly bar with the last trading day of the month, so "same date as
-    today" is only the right test for daily and intraday bars.
+    today" is only the right test for daily and intraday bars.  Weekly/monthly
+    window logic is shared with the other A-share sources via
+    ``ashare_head_bar_live`` so the same chart can't disagree across sources.
     """
     now = now or cn_now()
     tf = str(timeframe or "").strip()
-    if tf == "1w":
-        return _same_iso_week(ts_open_ms, now) and now < _week_close(now)
-    if tf == "1M":
-        opened = datetime.fromtimestamp(int(ts_open_ms) / 1000, tz=now.tzinfo)
-        same_month = (opened.year, opened.month) == (now.year, now.month)
-        return same_month and now < _month_close(now)
+    if tf in ("1w", "1M"):
+        return ashare_head_bar_live(tf, now, head_ts_open_ms=ts_open_ms)
     if bar_trade_date(ts_open_ms) != now.date():
         return False
     return ashare_head_bar_live("1d" if tf == "1d" else tf, now)

@@ -5,9 +5,10 @@ Used by East Money, Baostock, and optional AkShare paths — not tied to AkShare
 
 from __future__ import annotations
 
+import calendar
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -112,13 +113,60 @@ def ashare_is_forming_bar(timeframe: str, now: datetime | None = None) -> bool:
     return ashare_head_bar_live(timeframe, now)
 
 
-def ashare_head_bar_live(timeframe: str, now: datetime | None = None) -> bool:
+def ashare_week_close(now: datetime) -> datetime:
+    """Friday 15:00 CN of the ISO week containing ``now`` (weekly bar close)."""
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return (monday + timedelta(days=4)).replace(hour=15)
+
+
+def ashare_month_close(now: datetime) -> datetime:
+    """Last calendar day 15:00 CN of the month containing ``now``."""
+    last_day = calendar.monthrange(now.year, now.month)[1]
+    return now.replace(day=last_day, hour=15, minute=0, second=0, microsecond=0)
+
+
+def ashare_same_iso_week(ts_open_ms: int, now: datetime) -> bool:
+    """Whether the bar timestamp falls in the same ISO week as ``now``."""
+    opened = datetime.fromtimestamp(int(ts_open_ms) / 1000, tz=now.tzinfo)
+    return opened.isocalendar()[:2] == now.isocalendar()[:2]
+
+
+def ashare_head_bar_live(
+    timeframe: str,
+    now: datetime | None = None,
+    head_ts_open_ms: int | None = None,
+) -> bool:
     """Whether snapshot index-0 should be marked unclosed (forming/live).
 
     Intraday bars only update during continuous sessions; daily bars stay live
-    through lunch until 15:00.
+    through lunch until 15:00.  Weekly/monthly bars stay live until the
+    period's Friday/last-day 15:00 CN — the wall clock alone used to decide
+    this off the *daily* session, so a Wednesday-evening half-finished weekly
+    bar was handed to the AI as a closed K1 (Baostock disagreed with East
+    Money/AkShare on the same chart).
+
+    ``head_ts_open_ms`` guards against stale heads: without it a previous
+    week's final bar would be re-marked forming every morning before Friday.
+    Callers that know the head row's timestamp should always pass it.
     """
-    tf = str(timeframe or "").strip().lower()
+    raw = str(timeframe or "").strip()
+    tf = raw.lower()
+    now = now or cn_now()
+    if tf == "1w":
+        if now >= ashare_week_close(now):
+            return False
+        if head_ts_open_ms is None:
+            return True
+        return ashare_same_iso_week(int(head_ts_open_ms), now)
+    if raw == "1M":
+        if now >= ashare_month_close(now):
+            return False
+        if head_ts_open_ms is None:
+            return True
+        opened = datetime.fromtimestamp(int(head_ts_open_ms) / 1000, tz=now.tzinfo)
+        return (opened.year, opened.month) == (now.year, now.month)
     if tf == "1d":
         return ashare_trading_day(now)
     return ashare_session_open(now)

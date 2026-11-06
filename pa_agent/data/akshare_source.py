@@ -328,14 +328,16 @@ class AkShareSource(DataSource):
         if not rows_asc:
             raise DataSourceTransientError(f"AkShare 未返回数据: {self._symbol} {self._timeframe}")
 
-        # Daily bars must keep the same live/closed boundary as the other A-share
-        # sources (through the lunch break until 15:00); intraday bars only refresh
-        # during the continuous sessions.
-        head_live = _ashare_head_bar_live(self._timeframe)
         if _ashare_session_open():
             self._apply_spot_to_forming(rows_asc)
 
         rows_newest = list(reversed(rows_asc[-fetch_n:]))
+        # Daily bars must keep the same live/closed boundary as the other A-share
+        # sources (through the lunch break until 15:00); intraday bars only refresh
+        # during the continuous sessions.  The head ts keeps a stale weekly/monthly
+        # row from being re-marked forming after its period already ended.
+        head_ts = rows_newest[0].get("ts_open") if rows_newest else None
+        head_live = _ashare_head_bar_live(self._timeframe, head_ts_open_ms=head_ts)
         for i, row in enumerate(rows_newest):
             row["closed"] = not (i == 0 and head_live)
 
