@@ -651,6 +651,15 @@ class JsonValidator:
                     ):
                         invalid.append(f"trace_semantic:{msg}")
 
+            # §1.3/§1.2 chaos-gate invariant: a safety check, so it runs even
+            # when the optional coherence bundle above is disabled (lenient
+            # defaults) — a model-written "极端混乱 + proceed" trace must be
+            # rejected program-side, not just forbidden by prompt text.
+            from pa_agent.ai.decision_tree import validate_chaos_gate_invariant
+
+            for msg in validate_chaos_gate_invariant(obj):
+                invalid.append(f"gate:{msg}")
+
         if stage == "stage2":
             if pre_normalization_no_order_err:
                 for field in pre_normalization_no_order_err["fields"]:

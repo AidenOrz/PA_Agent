@@ -110,11 +110,15 @@ def _ashare_session_open(now: datetime | None = None) -> bool:
     return ashare_session_open(now)
 
 
-def _ashare_head_bar_live(timeframe: str, now: datetime | None = None) -> bool:
+def _ashare_head_bar_live(
+    timeframe: str,
+    now: datetime | None = None,
+    head_ts_open_ms: int | None = None,
+) -> bool:
     """Whether index-0 should stay unclosed (daily bars live through lunch)."""
     from pa_agent.data.ashare_common import ashare_head_bar_live
 
-    return ashare_head_bar_live(timeframe, now)
+    return ashare_head_bar_live(timeframe, now, head_ts_open_ms=head_ts_open_ms)
 
 
 def _row_time_to_ts_ms(value: Any) -> int:

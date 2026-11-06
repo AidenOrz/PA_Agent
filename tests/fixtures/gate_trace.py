@@ -32,7 +32,10 @@ def make_mandatory_gate_trace_proceed(
         item: dict[str, Any] = {
             "node_id": nid,
             "question": f"节点 {nid}",
-            "answer": "是",
+            # §1.3 的契约方向：answer=是 代表极端混乱、必须阻断闸门（wait）。
+            # proceed 流程必须是「否」——此前一律填「是」，等于让整套测试夹具
+            # 编码了已被修复的 §1.3 方向反转 bug，程序侧不变量一开就全线误报。
+            "answer": "否" if nid == "1.3" else "是",
             "reason": reason,
             "bar_range": bar_range,
         }

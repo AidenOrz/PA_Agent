@@ -457,6 +457,42 @@ def build_stage2_gate_wait_response(stage1_json: dict[str, Any]) -> dict[str, An
     }
 
 
+def validate_chaos_gate_invariant(stage1: dict[str, Any]) -> list[str]:
+    """Safety invariant tying gate_result to the chaos/cycle gate nodes.
+
+    The prompt contract allows ``gate_result=wait/unknown`` to be triggered
+    only by §1.2 (cycle unrecognisable) or §1.3 (极端混乱 extreme_tr), and
+    §1.3=是 must block the gate.  This used to live only in prompt text: a
+    model-written gate_trace answering §1.3=是 while still proceeding sailed
+    through every program check when the optional coherence bundle was
+    disabled (the shipped lenient defaults).  Unlike
+    ``validate_gate_result_consistency`` (part of that optional bundle) this
+    invariant runs unconditionally from the stage1 validator.
+    """
+    errors: list[str] = []
+    if stage1.get("gate_result") != "proceed":
+        return errors
+    trace = stage1.get("gate_trace")
+    if not isinstance(trace, list):
+        return errors
+    for i, item in enumerate(trace):
+        if not isinstance(item, dict):
+            continue
+        nid = str(item.get("node_id", ""))
+        ans = item.get("answer")
+        if nid == "1.3" and ans == "是":
+            errors.append(
+                f"gate_trace[{i}] §1.3 answer=是（极端混乱）与 gate_result=proceed 矛盾："
+                "极端混乱必须阻断闸门，gate_result 应为 wait"
+            )
+        elif nid == "1.2" and ans == "否":
+            errors.append(
+                f"gate_trace[{i}] §1.2 answer=否（无法识别周期）与 gate_result=proceed 矛盾："
+                "gate_result 应为 wait"
+            )
+    return errors
+
+
 def validate_gate_result_consistency(stage1: dict[str, Any]) -> list[str]:
     """Return list of consistency error messages (empty if ok)."""
     errors: list[str] = []
