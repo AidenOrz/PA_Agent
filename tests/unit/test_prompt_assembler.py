@@ -749,7 +749,8 @@ def test_incremental_stage1_appends_task_to_completed_chain(
     messages = assembler.build_incremental_stage1(frame, previous, 1)
 
     assert len(messages) == len(prev_s2) + 1
-    for old, new in zip(prev_s2, messages, strict=True):
+    # messages = 上一轮链（prev_s2，逐字节相同）+ 末尾新增的增量任务
+    for old, new in zip(prev_s2, messages[:-1], strict=True):
         assert new["role"] == old["role"]
         assert new["content"] == old["content"]  # 前缀逐字节相同
     assert messages[-1]["content"].startswith("## 阶段一增量更新任务")

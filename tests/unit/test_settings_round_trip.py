@@ -16,7 +16,7 @@ def test_defaults(tmp_path):
     assert s.provider.base_url == "https://api.deepseek.com"
     assert s.provider.thinking is True
     assert s.provider.reasoning_effort == "high"
-    assert s.provider.context_window == 2_000_000
+    assert s.provider.context_window == 1_000_000  # DeepSeek 官方当前上下文（2026-11）
     assert s.general.analysis_bar_count == 100
     assert s.general.last_symbol == "XAUUSDm"
     assert s.general.last_timeframe == "15m"
