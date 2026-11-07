@@ -402,8 +402,9 @@ def test_stage2_chain_does_not_duplicate_assistant_when_chain_already_has_it(
         "gate_result": "proceed",
     }
     raw_reply = '{"cycle_position":"normal_channel","direction":"bullish"}'
-    stage1_messages = assembler.build_stage1(frame) + [
-        {"role": "assistant", "content": raw_reply}
+    stage1_messages = [
+        *assembler.build_stage1(frame),
+        {"role": "assistant", "content": raw_reply},
     ]
 
     messages = assembler.build_stage2_continuation(
@@ -427,7 +428,7 @@ def test_stage2_chain_appends_raw_reply_not_normalized_copy(assembler: PromptAss
     stage1_json = {"cycle_position": "normal_channel", "direction": "bullish"}
     # 原始输出带围栏和多余文本——真实模型输出常见形态
     raw_reply = (
-        '好的，以下是诊断结果：\n\n```json\n'
+        "好的，以下是诊断结果：\n\n```json\n"
         '{"cycle_position": "normal_channel", "direction": "bullish"}\n```'
     )
 
@@ -716,8 +717,9 @@ def test_incremental_stage1_appends_task_to_completed_chain(
     s1_messages = assembler.build_stage1(base_frame)
     raw_s1 = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
     raw_s2 = '{"decision":{"order_type":"不下单"}}'
-    prev_s1 = s1_messages + [{"role": "assistant", "content": raw_s1}]
-    prev_s2 = prev_s1 + [
+    prev_s1 = [*s1_messages, {"role": "assistant", "content": raw_s1}]
+    prev_s2 = [
+        *prev_s1,
         {"role": "user", "content": "## 阶段二任务\n（上一轮 S2 任务）"},
         {"role": "assistant", "content": raw_s2},
     ]
@@ -747,7 +749,7 @@ def test_incremental_stage1_appends_task_to_completed_chain(
     messages = assembler.build_incremental_stage1(frame, previous, 1)
 
     assert len(messages) == len(prev_s2) + 1
-    for old, new in zip(prev_s2, messages):
+    for old, new in zip(prev_s2, messages, strict=True):
         assert new["role"] == old["role"]
         assert new["content"] == old["content"]  # 前缀逐字节相同
     assert messages[-1]["content"].startswith("## 阶段一增量更新任务")
@@ -767,10 +769,11 @@ def test_incremental_stage1_chain_preserves_intermediate_new_bars(
 
     first = assembler.build_incremental_stage1(frame2, base_record, 1)
     first_reply = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+    final_asst = {"role": "assistant", "content": first_reply}
     record1 = base_record.model_copy(
         update={
-            "stage1_messages": first + [{"role": "assistant", "content": first_reply}],
-            "stage2_messages": first + [{"role": "assistant", "content": first_reply}],
+            "stage1_messages": [*first, final_asst],
+            "stage2_messages": [*first, final_asst],
         }
     )
 
@@ -796,7 +799,7 @@ def _make_chainless_previous(assembler: PromptAssembler, s1_messages: list, raw_
         ),
         kline_data=[],
         htf_text="",
-        stage1_messages=s1_messages + [{"role": "assistant", "content": raw_s1}],
+        stage1_messages=[*s1_messages, {"role": "assistant", "content": raw_s1}],
         stage1_response={"content": raw_s1},
         stage1_diagnosis={"cycle_position": "normal_channel"},
         stage2_messages=[],
@@ -820,8 +823,8 @@ def test_incremental_stage1_rebuilds_when_prompt_system_changed(
     old_system = {"role": "system", "content": "OLD SYSTEM PROMPT"}
     previous = previous.model_copy(
         update={
-            "stage1_messages": [old_system] + list(previous.stage1_messages[1:]),
-            "stage2_messages": [old_system] + list(previous.stage2_messages[1:]),
+            "stage1_messages": [old_system, *previous.stage1_messages[1:]],
+            "stage2_messages": [old_system, *previous.stage2_messages[1:]],
         }
     )
 

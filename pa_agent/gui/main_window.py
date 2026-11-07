@@ -4258,9 +4258,6 @@ class MainWindow(QMainWindow):
                     prompt_tokens = usage_total.get("prompt_tokens", 0)
                     cached_tokens = usage_total.get("cached_prompt_tokens", 0)
                     completion_tokens = usage_total.get("completion_tokens", 0)
-                    total_tokens = usage_total.get("total_tokens", 0) or (
-                        prompt_tokens + completion_tokens
-                    )
                     panel.update_token_display(
                         {
                             # 上下文占用按最近一次请求的实际输入计（S2 prompt 已含
@@ -4325,9 +4322,6 @@ class MainWindow(QMainWindow):
                 prompt_tokens = usage_total.get("prompt_tokens", 0)
                 cached_tokens = usage_total.get("cached_prompt_tokens", 0)
                 completion_tokens = usage_total.get("completion_tokens", 0)
-                total_tokens = usage_total.get("total_tokens", 0) or (
-                    prompt_tokens + completion_tokens
-                )
 
                 panel.update_token_display(
                     {

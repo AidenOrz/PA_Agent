@@ -1323,17 +1323,15 @@ class PromptAssembler:
             return None
 
         def _matches(row: dict, found: tuple[float, float]) -> bool:
-            prev_close = row.get("close")
-            if prev_close is not None and not math.isclose(
-                float(prev_close), found[0], rel_tol=0.0, abs_tol=1e-6
-            ):
-                return False
-            prev_vol = row.get("volume")
-            if prev_vol is not None and not math.isclose(
-                float(prev_vol), found[1], rel_tol=0.0, abs_tol=1e-6
-            ):
-                return False
-            return True
+            """close/volume 均与上一轮记录一致（未修订）时为 True。"""
+            pairs = (
+                (row.get("close"), found[0]),
+                (row.get("volume"), found[1]),
+            )
+            return all(
+                prev is None or math.isclose(float(prev), value, rel_tol=0.0, abs_tol=1e-6)
+                for prev, value in pairs
+            )
 
         anchor_seen = False
         for i, row in enumerate(prev_data):
@@ -1770,8 +1768,6 @@ class PromptAssembler:
         Standalone mode (OpenClaw Agent and similar):
           [system, user(S2 task + full K-line tables)]
         """
-        from pa_agent.ai.deepseek_client import supports_kv_prefix_chain
-
         if use_prefix_chain is None:
             use_prefix_chain = self.resolve_stage2_cache_mode(provider_settings) == "chain"
 
