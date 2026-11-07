@@ -21,7 +21,23 @@ def test_ledger_accumulates_tokens():
     ledger.add(_usage(200, 80))
     assert ledger.total_input == 300
     assert ledger.total_output == 130
-    assert ledger.context_used == 430
+
+
+def test_context_used_is_last_request_not_cumulative():
+    """上下文占用 = 最近一次请求的实际输入，不是历史消费累计（开发文档 §9.3）。
+
+    多轮追问把历史重发，累计输入会虚增；但每次请求占用的上下文只看该请求
+    自己的 prompt。累计消费（total_*）与上下文占用（context_used）必须分开。
+    """
+    ledger = SessionTokenLedger(context_window=1_000_000)
+    ledger.add(_usage(100, 50))
+    assert ledger.context_used == 100
+    ledger.add(_usage(200, 80))
+    assert ledger.context_used == 200  # 不是 100+200+130
+    bd = ledger.breakdown()
+    assert bd["context_used"] == 200
+    assert bd["total_input"] == 300  # 累计消费口径保持不变
+    assert bd["context_pct"] == 0.02
 
 
 def test_breakdown_keeps_latest_call_for_cache_rate():

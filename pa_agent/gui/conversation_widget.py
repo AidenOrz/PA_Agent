@@ -498,7 +498,9 @@ class ConversationWidget(QWidget):
         )
         # Keep a full tooltip for details
         self._token_label.setToolTip(
-            f"输入 token（本会话累计）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
+            f"当前请求上下文占用：{context_used:,} / {context_window:,}"
+            "（最近一次请求的实际输入，非累计消费）\n"
+            f"输入 token（本会话累计消费）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
             f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%）\n"
             f"  未命中：{denom - cached:,}（按未命中价计费）\n"
             f"输出 token：{total_output:,}\n"

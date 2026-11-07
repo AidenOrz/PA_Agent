@@ -14,6 +14,14 @@ from PyQt6.QtCore import QObject, pyqtSignal
 class SessionTokenLedger(QObject):
     """Accumulates token usage across API calls in a session.
 
+    两个口径必须分开（开发文档 §9.3）：
+
+    - **历史累计消费**：total_input / total_cached_input / total_output，
+      本会话所有 API 调用的合计，反映花了多少钱，不代表上下文占用。
+    - **当前请求上下文占用**：context_used = 最近一次请求的输入 token
+      （该请求重发的完整历史就是它占用的上下文）。上下文告警按此口径，
+      否则多轮追问的累计和会虚假地「用满」窗口。
+
     Signals
     -------
     threshold_crossed(str, dict)
@@ -46,7 +54,8 @@ class SessionTokenLedger(QObject):
 
     @property
     def context_used(self) -> int:
-        return self.total_input + self.total_output
+        """Context occupied by the most recent request (not cumulative spend)."""
+        return self.last_prompt_tokens
 
     def add(self, usage: AIUsage) -> None:
         """Accumulate usage from one API call and emit signals."""
@@ -104,12 +113,14 @@ class SessionTokenLedger(QObject):
         """Return current totals as a dict for UI display."""
         pct = self.context_used / self._context_window * 100.0
         return {
+            # 累计消费口径（§9.3：不代表上下文占用）
             "total_input": self.total_input,
             "total_cached_input": self.total_cached_input,
             # Latest single call, used for the displayed cache-hit rate.
             "last_input": self.last_prompt_tokens,
             "last_cached_input": self.last_cached_prompt_tokens,
             "total_output": self.total_output,
+            # 当前请求上下文占用口径（最近一次请求的实际输入）
             "context_used": self.context_used,
             "context_window": self._context_window,
             "context_pct": round(pct, 2),

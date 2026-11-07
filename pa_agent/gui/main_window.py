@@ -4263,7 +4263,9 @@ class MainWindow(QMainWindow):
                     )
                     panel.update_token_display(
                         {
-                            "context_used": total_tokens,
+                            # 上下文占用按最近一次请求的实际输入计（S2 prompt 已含
+                            # S1 链）；累计 in/out 是消费口径，不代表上下文（§9.3）。
+                            "context_used": _last_stage_prompt_tokens(record),
                             "context_window": context_window,
                             "total_input": prompt_tokens,
                             "total_cached_input": cached_tokens,
@@ -4329,7 +4331,9 @@ class MainWindow(QMainWindow):
 
                 panel.update_token_display(
                     {
-                        "context_used": total_tokens,
+                        # 上下文占用按最近一次请求的实际输入计（S2 prompt 已含
+                        # S1 链）；累计 in/out 是消费口径，不代表上下文（§9.3）。
+                        "context_used": _last_stage_prompt_tokens(record),
                         "context_window": context_window,
                         "total_input": prompt_tokens,
                         "total_cached_input": cached_tokens,

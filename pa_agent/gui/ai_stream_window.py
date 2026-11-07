@@ -528,7 +528,9 @@ class AIStreamPanel(QWidget):
             f"in {total_input:,} / out {total_output:,}{cache_str}"
         )
         self._token_label.setToolTip(
-            f"输入 token（本轮累计）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
+            f"当前请求上下文占用：{context_used:,} / {context_window:,}"
+            "（最近一次请求的实际输入，非累计消费）\n"
+            f"输入 token（本轮累计消费）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
             f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%）\n"
             f"  未命中：{denom - cached:,}\n"
             f"输出 token：{total_output:,}\n"
