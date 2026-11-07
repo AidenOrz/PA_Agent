@@ -1146,17 +1146,40 @@ class PromptAssembler:
     ) -> list[dict]:
         """Build Stage 1 as a continuation-based incremental update.
 
-        Structure:
+        Preferred form (开发文档 §7.2 追加式历史) — when the previous record
+        carries a completed request chain (stage2_messages preferred, else
+        stage1_messages) whose system blob still matches the current build:
+
+          [...上一轮请求链逐字节复用..., user(增量任务)]
+
+        Nothing from previous rounds is rebuilt or rewritten: the prefix stays
+        byte-identical, bars added by earlier incremental rounds are preserved
+        (不再丢中间新增棒), and because the chain ends with the previous S2
+        reply, the next S2 request can re-hit this whole request as its prefix.
+
+        Legacy fallback (old records without a completed chain): rebuild the
+        4-message continuation
           [0] system    — Stage 1 system prompt (same as full Stage 1)
           [1] user      — Previous full Stage 1 user prompt (with K-line table)
           [2] assistant — Previous Stage 1 reply
           [3] user      — Incremental task (new K-lines only, no full table)
-
-        Benefits vs old 2-message incremental:
-        - [system, user(S1)] prefix is IDENTICAL to full Stage 1 → prefix cache hit
-        - Full K-line table is in [1], not re-sent in [3] → saves ~14.5K tokens
-        - Stage 2 continuation can also cache-hit this prefix chain
         """
+        system_content = self._build_stage1_system_prompt()
+        incremental_user_content = self._build_incremental_stage1_continuation_user_prompt(
+            frame,
+            previous_record,
+            new_bar_count,
+            analysis_mode=analysis_mode,
+        )
+
+        # ── §7.2 追加式历史：整体复用上一轮已完成请求链，只在尾部追加任务 ──
+        base_chain = self._select_incremental_base_chain(previous_record, system_content)
+        if base_chain is not None:
+            messages = [dict(m) for m in base_chain]
+            messages.append({"role": "user", "content": incremental_user_content})
+            return messages
+
+        # ── 兼容路径：旧记录链不完整时重建四条消息（中间轮次会丢，仅兜底）──
         prev_s1_messages = getattr(previous_record, "stage1_messages", None) or []
         prev_s1_response = getattr(previous_record, "stage1_response", None) or {}
 
@@ -1219,20 +1242,126 @@ class PromptAssembler:
         else:
             assistant_turn = {"role": "assistant", "content": prev_assistant_content}
 
-        system_content = self._build_stage1_system_prompt()
-        incremental_user_content = self._build_incremental_stage1_continuation_user_prompt(
-            frame,
-            previous_record,
-            new_bar_count,
-            analysis_mode=analysis_mode,
-        )
-
         return [
             {"role": "system", "content": system_content},
             {"role": "user", "content": prev_user_content},
             assistant_turn,
             {"role": "user", "content": incremental_user_content},
         ]
+
+    def _select_incremental_base_chain(
+        self,
+        previous_record: AnalysisRecord,
+        current_system: str,
+    ) -> list[dict] | None:
+        """Pick the richest completed request chain to append the new task onto.
+
+        §7.2：优先上一轮 stage2_messages（chain 形态下 = S1 全链 + S2 任务 +
+        S2 回答，其前缀与上一轮 S2 请求逐字节相同，下一轮 S2 可整体命中）；
+        否则退回 stage1_messages。仅当链以非空 assistant 收尾、且 system 与
+        当前构建逐字节一致时才可复用——提示词已升级 → 必须新建上下文段，
+        不得原位续写旧历史。
+        """
+        for attr in ("stage2_messages", "stage1_messages"):
+            chain = getattr(previous_record, attr, None) or []
+            if len(chain) < 3:
+                continue
+            if chain[0].get("role") != "system":
+                continue
+            if (chain[0].get("content") or "") != current_system:
+                continue
+            if chain[-1].get("role") != "assistant":
+                continue
+            if not str(chain[-1].get("content") or "").strip():
+                continue
+            return chain
+        return None
+
+    @staticmethod
+    def _kline_shift_vs_previous(
+        previous_record: AnalysisRecord,
+        frame: KlineFrame,
+        new_bar_count: int,
+    ) -> bool:
+        """True when the frame extends the previous record's table by exactly
+        *new_bar_count* closed bars and every previous bar is unchanged.
+
+        锚定规则与 ``compute_incremental_bar_delta`` 同源（ts_open + 毫秒容差），
+        另外逐棒核对 close/volume——只有确认「无历史数据修订」才允许提示词
+        声称精确映射「旧表 K{j} = 本轮 K{j+new_bar_count}」(§7.4)。历史修订/
+        复权变化 → False，提示词改为明示以本消息数据为准。
+        """
+        from pa_agent.data.datetime_ts import ts_open_to_ms
+        from pa_agent.records.analysis_history import _TS_EPS_MS
+
+        prev_data = getattr(previous_record, "kline_data", None) or []
+        if not prev_data or new_bar_count <= 0:
+            return False
+        try:
+            anchor = ts_open_to_ms(prev_data[0]["ts_open"])
+        except (TypeError, ValueError, KeyError):
+            return False
+
+        # 当前 frame 的封闭棒 ts → (close, volume)，newest-first
+        current: dict[float, tuple[float, float]] = {}
+        for bar in frame.bars:
+            if not getattr(bar, "closed", True):
+                continue  # forming bar never appears in closed-bar tables
+            try:
+                current[ts_open_to_ms(bar.ts_open)] = (float(bar.close), float(bar.volume))
+            except (TypeError, ValueError):
+                return False
+        if not current:
+            return False
+        oldest_current = min(current)
+
+        def _probe(ts: float) -> tuple[float, float] | None:
+            for delta in (0.0, _TS_EPS_MS, -_TS_EPS_MS):
+                match = current.get(ts + delta)
+                if match is not None:
+                    return match
+            return None
+
+        def _matches(row: dict, found: tuple[float, float]) -> bool:
+            prev_close = row.get("close")
+            if prev_close is not None and not math.isclose(
+                float(prev_close), found[0], rel_tol=0.0, abs_tol=1e-6
+            ):
+                return False
+            prev_vol = row.get("volume")
+            if prev_vol is not None and not math.isclose(
+                float(prev_vol), found[1], rel_tol=0.0, abs_tol=1e-6
+            ):
+                return False
+            return True
+
+        anchor_seen = False
+        for i, row in enumerate(prev_data):
+            if not isinstance(row, dict):
+                return False
+            try:
+                ts = ts_open_to_ms(row["ts_open"])
+            except (TypeError, ValueError, KeyError):
+                return False
+            if i == 0:
+                # 锚定棒必须在当前窗口内，且其之前的新增封闭棒数恰为 new_bar_count
+                # （与 compute_incremental_bar_delta 的锚定规则同源）
+                found = _probe(ts)
+                if found is None or not _matches(row, found):
+                    return False
+                anchor_seen = True
+                newer = sum(1 for ts_cur in current if ts_cur > anchor + _TS_EPS_MS)
+                if newer != new_bar_count:
+                    return False
+            elif ts >= oldest_current - _TS_EPS_MS:
+                # 仍在当前窗口内的旧棒必须原样存在（无修订）
+                found = _probe(ts)
+                if found is None or not _matches(row, found):
+                    return False
+            else:
+                # 更旧的棒已滚出当前窗口（analysis_bar_count 截断），无法也无需核对
+                break
+        return anchor_seen
 
     def _stage1_pattern_supplement(self) -> str:
         """Pattern tag table + briefs for Stage 1 (optional via settings)."""
@@ -1483,11 +1612,27 @@ class PromptAssembler:
             "stage2_decision": previous_record.stage2_decision or {},
             "strategy_files_used": previous_record.strategy_files_used or [],
         }
+        # K 编号诚实化（开发文档 §7.4）：旧表从未被重编号，不得宣称「K1=当前最新」。
+        # 数据严格对齐时才给出精确映射；对齐失败（历史修订/复权变化）时明示以
+        # 本消息携带的数据与编号为准。
+        if self._kline_shift_vs_previous(previous_record, frame, new_count):
+            numbering_note = (
+                "完整 K 线数据已包含在上方历史消息的K线表中，该表按上一轮编号"
+                f"（其 K1=上一轮最新已收盘棒）。本轮新增棒编号 K1..K{new_count}"
+                f"（K1=当前最新已收盘）；上一轮表中的 K{{j}} 对应本轮 K{{j+{new_count}}}，"
+                "你可以按时间回溯查看任何历史 K 线。\n"
+            )
+        else:
+            numbering_note = (
+                "完整 K 线数据已包含在上方历史消息的K线表中。注意：上一轮记录与本轮"
+                "行情可能存在差异（历史数据修订/复权变化），旧表及其编号仅供参考，"
+                "一切以本消息携带的数据与编号为准。\n"
+            )
         return (
             "## 阶段一增量更新任务\n\n"
-            "上方是你上一轮完成的阶段一诊断。现在基于新增 K 线，更新诊断与闸门判断。\n"
-            "完整 K 线数据已包含在上方阶段一用户消息中（K线序号已重新编号，"
-            "K1=当前最新已收盘K线），你可以回溯查看任何历史 K 线。\n\n"
+            "上方历史包含你上一轮完成的阶段一诊断（链式上下文中还可能包含上一轮的"
+            "阶段二任务与决策）。现在基于新增 K 线，更新诊断与闸门判断。\n"
+            f"{numbering_note}\n"
             "⚠ 反锚定要求——这是增量分析最重要的原则：\n"
             "- 不要因为上一轮已得出结论就倾向于延续它；上一轮结论只是参考起点，不是约束。\n"
             "- 如果新增 K 线改变了市场结构（突破、反转、趋势加速/衰竭），必须果断推翻上一轮结论，而非在旧结论上微调。\n"
@@ -1510,7 +1655,7 @@ class PromptAssembler:
             f"{_INCREMENTAL_OUTPUT_HARD_RULES}\n\n"
             f"## 当前分析目标更新\n\n"
             f"品种:{frame.symbol} 周期:{frame.timeframe} K线数量:{n_bars} 新增已收盘K线:{new_count}\n"
-            f"（K线序号已重新编号：1=最新已收盘，最大 K{n_bars}；"
+            f"（本轮输出的 K 编号一律按当前窗口：1=最新已收盘，最大 K{n_bars}；"
             f"每个决策节点的 bar_range 由你自行选择子区间，勿超出 K{n_bars}-K1）\n\n"
             "## 上一轮已完成分析（仅作为延续上下文）\n\n"
             f"```json\n{json.dumps(previous_summary, ensure_ascii=False, indent=2)}\n```\n\n"

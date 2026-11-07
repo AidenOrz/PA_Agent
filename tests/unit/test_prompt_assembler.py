@@ -704,6 +704,176 @@ def test_incremental_stage1_normalizes_fenced_previous_response(
     assert parsed["cycle_position"] == "trending_tr"
 
 
+def test_incremental_stage1_appends_task_to_completed_chain(
+    assembler: PromptAssembler,
+):
+    """§7.2 追加式历史：上一轮已完成链（含 S2 任务与回答）逐字节复用，
+    只在尾部追加增量任务——不再丢弃中间轮次、不再重写历史回答。"""
+    from pa_agent.records.schema import AnalysisRecord, RecordMeta
+
+    frame = _make_frame(6)
+    base_frame = _make_frame(5)
+    s1_messages = assembler.build_stage1(base_frame)
+    raw_s1 = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+    raw_s2 = '{"decision":{"order_type":"不下单"}}'
+    prev_s1 = s1_messages + [{"role": "assistant", "content": raw_s1}]
+    prev_s2 = prev_s1 + [
+        {"role": "user", "content": "## 阶段二任务\n（上一轮 S2 任务）"},
+        {"role": "assistant", "content": raw_s2},
+    ]
+    previous = AnalysisRecord(
+        meta=RecordMeta(
+            timestamp_local_iso="2026-01-01T00:00:00.000",
+            timestamp_local_ms=1,
+            symbol="XAUUSD",
+            timeframe="1h",
+            bar_count=5,
+            ai_provider={},
+        ),
+        kline_data=[],
+        htf_text="",
+        stage1_messages=prev_s1,
+        stage1_response={"content": raw_s1},
+        stage1_diagnosis={"cycle_position": "normal_channel"},
+        stage2_messages=prev_s2,
+        stage2_response={"content": raw_s2},
+        stage2_decision={"decision": {"order_type": "不下单"}},
+        strategy_files_used=[],
+        experience_loaded=[],
+        exception=None,
+        usage_total={},
+    )
+
+    messages = assembler.build_incremental_stage1(frame, previous, 1)
+
+    assert len(messages) == len(prev_s2) + 1
+    for old, new in zip(prev_s2, messages):
+        assert new["role"] == old["role"]
+        assert new["content"] == old["content"]  # 前缀逐字节相同
+    assert messages[-1]["content"].startswith("## 阶段一增量更新任务")
+    # S1 原始回答未被重新序列化成归一化副本
+    assert messages[2]["content"] == raw_s1
+
+
+def test_incremental_stage1_chain_preserves_intermediate_new_bars(
+    assembler: PromptAssembler,
+):
+    """§3.2 缺陷回归：连续两轮增量，第二轮请求必须保留第一轮的增量任务
+    （其中携带第一轮新增棒），不再只抽旧第一条 user 重建。"""
+    frame2 = _make_frame(6)
+    s1_messages = assembler.build_stage1(_make_frame(5))
+    raw_s1 = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+    base_record = _make_chainless_previous(assembler, s1_messages, raw_s1)
+
+    first = assembler.build_incremental_stage1(frame2, base_record, 1)
+    first_reply = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+    record1 = base_record.model_copy(
+        update={
+            "stage1_messages": first + [{"role": "assistant", "content": first_reply}],
+            "stage2_messages": first + [{"role": "assistant", "content": first_reply}],
+        }
+    )
+
+    second = assembler.build_incremental_stage1(_make_frame(7), record1, 1)
+
+    contents = [m["content"] for m in second]
+    assert first[-1]["content"] in contents  # 第一轮新增棒任务仍在链上
+    assert second[-1]["content"].startswith("## 阶段一增量更新任务")
+
+
+def _make_chainless_previous(assembler: PromptAssembler, s1_messages: list, raw_s1: str):
+    """Previous full-analysis record with empty stage2_messages (gate short-circuit)."""
+    from pa_agent.records.schema import AnalysisRecord, RecordMeta
+
+    return AnalysisRecord(
+        meta=RecordMeta(
+            timestamp_local_iso="2026-01-01T00:00:00.000",
+            timestamp_local_ms=1,
+            symbol="XAUUSD",
+            timeframe="1h",
+            bar_count=5,
+            ai_provider={},
+        ),
+        kline_data=[],
+        htf_text="",
+        stage1_messages=s1_messages + [{"role": "assistant", "content": raw_s1}],
+        stage1_response={"content": raw_s1},
+        stage1_diagnosis={"cycle_position": "normal_channel"},
+        stage2_messages=[],
+        stage2_response=None,
+        stage2_decision={"decision": {"order_type": "不下单"}},
+        strategy_files_used=[],
+        experience_loaded=[],
+        exception=None,
+        usage_total={},
+    )
+
+
+def test_incremental_stage1_rebuilds_when_prompt_system_changed(
+    assembler: PromptAssembler,
+):
+    """提示词升级（链首 system 与当前构建不一致）→ 新建上下文段，退回重建。"""
+    frame = _make_frame(5)
+    s1_messages = assembler.build_stage1(frame)
+    raw_s1 = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+    previous = _make_chainless_previous(assembler, s1_messages, raw_s1)
+    old_system = {"role": "system", "content": "OLD SYSTEM PROMPT"}
+    previous = previous.model_copy(
+        update={
+            "stage1_messages": [old_system] + list(previous.stage1_messages[1:]),
+            "stage2_messages": [old_system] + list(previous.stage2_messages[1:]),
+        }
+    )
+
+    messages = assembler.build_incremental_stage1(frame, previous, 1)
+
+    # 兼容路径重建：新 system + 旧 user + 回答 + 增量任务
+    assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
+    assert messages[0]["content"] == s1_messages[0]["content"]
+
+
+def test_incremental_stage1_numbering_map_requires_alignment(
+    assembler: PromptAssembler,
+):
+    """§7.4：只有逐棒核对无历史修订时，才声称「旧表 K{j} = 本轮 K{j+m}」；
+    对齐失败（修订/复权变化）必须明示以本消息数据为准。"""
+
+    def _prev_rows_from(frame_bars, skip_newest: int) -> list[dict]:
+        closed = [b for b in frame_bars if b.closed]
+        return [
+            {
+                "ts_open": b.ts_open,
+                "open": b.open,
+                "high": b.high,
+                "low": b.low,
+                "close": b.close,
+                "volume": b.volume,
+            }
+            for b in closed[skip_newest:]
+        ]
+
+    def _record_with_kline(s1_messages: list, raw_s1: str, kline_rows: list[dict]):
+        record = _make_chainless_previous(assembler, s1_messages, raw_s1)
+        return record.model_copy(update={"kline_data": kline_rows})
+
+    s1_messages = assembler.build_stage1(_make_frame(5))
+    raw_s1 = '{"cycle_position":"normal_channel","gate_result":"proceed"}'
+
+    # 对齐：上一轮 = 当前窗口去掉最新 1 根封闭棒，数值原样
+    frame = _make_frame(6)
+    aligned = _record_with_kline(s1_messages, raw_s1, _prev_rows_from(frame.bars, 1))
+    aligned_msgs = assembler.build_incremental_stage1(frame, aligned, 1)
+    assert "对应本轮 K{j+1}" in aligned_msgs[-1]["content"]
+
+    # 修订：锚定棒 close 被改 → 映射声明必须让位于「以本消息为准」
+    revised_rows = _prev_rows_from(frame.bars, 1)
+    revised_rows[0] = {**revised_rows[0], "close": revised_rows[0]["close"] + 5.0}
+    revised = _record_with_kline(s1_messages, raw_s1, revised_rows)
+    revised_msgs = assembler.build_incremental_stage1(frame, revised, 1)
+    assert "对应本轮 K{j+" not in revised_msgs[-1]["content"]
+    assert "一切以本消息携带的数据与编号为准" in revised_msgs[-1]["content"]
+
+
 def test_incremental_stage1_raises_without_previous_messages(
     assembler: PromptAssembler,
 ):
