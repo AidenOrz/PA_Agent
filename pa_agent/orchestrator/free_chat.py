@@ -298,7 +298,12 @@ class FreeChatSession:
                 )
         for msg in self._history_full:
             if msg["role"] == "user":
-                history_for_api.append({"role": "user", "content": msg["content"]})
+                # §7.5：重发历史必须带上该轮实际发送的内容（含行情快照表），
+                # 不能用简短展示问题替换——否则前缀从旧 user 位置断开，
+                # 且重启后无法恢复原请求。
+                history_for_api.append(
+                    {"role": "user", "content": msg.get("actual_content") or msg["content"]}
+                )
             elif msg["role"] == "assistant":
                 assistant_msg: dict = {"role": "assistant", "content": msg["content"]}
                 if (self.keep_reasoning_in_resend or preserve_mimo) and msg.get(
@@ -346,6 +351,7 @@ class FreeChatSession:
                     "total_tokens": 0,
                 },
                 cancelled=True,
+                actual_user=user_content if user_content != user_text else None,
             )
             self._pending_writer.append_followup(self._record_id, cancelled_turn)
             raise CancelledError("FreeChatSession.send cancelled before API call")
@@ -374,12 +380,17 @@ class FreeChatSession:
                     "total_tokens": 0,
                 },
                 cancelled=True,
+                actual_user=user_content if user_content != user_text else None,
             )
             self._pending_writer.append_followup(self._record_id, cancelled_turn)
             raise
 
         # ── 5. Append to history_full (with reasoning preserved) ──────────────
-        self._history_full.append({"role": "user", "content": user_text})
+        # user 条目区分展示文本（content）与实际请求内容（actual_content）：
+        # 后者含本轮行情快照，是下一轮续接历史与恢复会话的唯一可信来源（§7.5）。
+        self._history_full.append(
+            {"role": "user", "content": user_text, "actual_content": user_content}
+        )
         self._history_full.append(
             {
                 "role": "assistant",
@@ -394,13 +405,17 @@ class FreeChatSession:
         # ── 7. Persist the followup turn ──────────────────────────────────────
         # 除四项计数外，同时记录实际服务模型名与单次命中率：配置模型名可能被
         # 网关别名改写，命中率必须按单次请求观测（设计文档 §2.1/§8.2）。
+        try:
+            hit_rate_pct = round(float(reply.usage.cache_hit_rate) * 100.0, 2)
+        except (AttributeError, TypeError, ValueError):
+            hit_rate_pct = 0.0
         usage_dict = {
             "prompt_tokens": reply.usage.prompt_tokens,
             "cached_prompt_tokens": reply.usage.cached_prompt_tokens,
             "completion_tokens": reply.usage.completion_tokens,
             "total_tokens": reply.usage.total_tokens,
             "model": (reply.raw or {}).get("model", ""),
-            "cache_hit_rate_pct": round(reply.usage.cache_hit_rate * 100.0, 2),
+            "cache_hit_rate_pct": hit_rate_pct,
         }
         followup_turn = FollowupTurn(
             turn=turn_number,
@@ -410,6 +425,7 @@ class FreeChatSession:
             ai_reasoning=reply.reasoning_content or None,
             usage=usage_dict,
             cancelled=False,
+            actual_user=user_content if user_content != user_text else None,
         )
         self._pending_writer.append_followup(self._record_id, followup_turn)
 

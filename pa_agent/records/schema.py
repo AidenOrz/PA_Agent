@@ -55,6 +55,9 @@ class FollowupTurn(BaseModel):
     ai_reasoning: str | None
     usage: dict
     cancelled: bool = False
+    #: 实际发送给 API 的 user 消息（含行情快照表）；为 None 表示与 user 展示文本
+    #: 相同。追问续接历史必须重发实际内容而非简短问题（开发文档 §7.5）。
+    actual_user: str | None = None
 
 
 class AlarmPayload(BaseModel):
