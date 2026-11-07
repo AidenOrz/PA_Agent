@@ -499,11 +499,12 @@ class ConversationWidget(QWidget):
         # Keep a full tooltip for details
         self._token_label.setToolTip(
             f"输入 token（本会话累计）：{total_input:,}，其中缓存命中 {total_cached:,}\n"
-            f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%，按 10% 价格计费）\n"
-            f"  未命中：{denom - cached:,}（按原价计费）\n"
+            f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%）\n"
+            f"  未命中：{denom - cached:,}（按未命中价计费）\n"
             f"输出 token：{total_output:,}\n"
             f"合计：{total_tokens:,}\n\n"
-            "DeepSeek KV Cache 缓存命中的 token 按 10% 价格计费，可大幅降低 API 费用。"
+            "DeepSeek KV Cache 命中的 token 按缓存价计费：官方直连为未命中价的 2%"
+            "（空闲时段 ¥0.02/1M vs ¥1/1M，输出无折扣）；第三方网关以其实际报价为准。"
         )
 
     def clear(self) -> None:

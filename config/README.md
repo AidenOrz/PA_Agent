@@ -38,7 +38,7 @@
 | `provider.api_key_encrypted` | string | `""` | 加密后的 Key；留空表示未配置（通过 GUI 保存时自动加密写入） |
 | `provider.thinking` | bool | `true` | 是否启用思考/推理类扩展参数（依模型与网关而定）。关闭可 3–5 倍提速但分析质量下降 |
 | `provider.reasoning_effort` | string | `"high"` | 推理深度：`low` / `medium` / `high` / `max` |
-| `provider.context_window` | int | `2000000` | 用于上下文占用提示的窗口大小（tokens） |
+| `provider.context_window` | int | `1000000` | 用于上下文占用提示的窗口大小（tokens）。DeepSeek 官方当前上下文长度为 1M（2026-11 核对）；其他模型/网关可手动覆盖 |
 
 ### general — 通用设置
 

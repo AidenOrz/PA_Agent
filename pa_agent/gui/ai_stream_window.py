@@ -532,7 +532,8 @@ class AIStreamPanel(QWidget):
             f"最近一次请求：输入 {denom:,}，缓存命中 {cached:,}（{cache_hit_pct:.1f}%）\n"
             f"  未命中：{denom - cached:,}\n"
             f"输出 token：{total_output:,}\n"
-            "DeepSeek KV Cache 命中的 token 按 10% 价格计费。"
+            "DeepSeek KV Cache 命中的 token 按缓存价计费：官方直连为未命中价的 2%"
+            "（空闲时段 ¥0.02/1M vs ¥1/1M，输出无折扣）；第三方网关以其实际报价为准。"
         )
 
     def on_stage_prompt_ready(self, stage: str, system: str, user: str) -> None:

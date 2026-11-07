@@ -6,7 +6,7 @@
     "api_key_encrypted": "",
     "thinking": true,
     "reasoning_effort": "high",
-    "context_window": 2000000
+    "context_window": 1000000
   },
   "general": {
     "analysis_bar_count": 100,

@@ -392,11 +392,15 @@ class FreeChatSession:
         self._ledger.add(reply.usage)
 
         # ── 7. Persist the followup turn ──────────────────────────────────────
+        # 除四项计数外，同时记录实际服务模型名与单次命中率：配置模型名可能被
+        # 网关别名改写，命中率必须按单次请求观测（设计文档 §2.1/§8.2）。
         usage_dict = {
             "prompt_tokens": reply.usage.prompt_tokens,
             "cached_prompt_tokens": reply.usage.cached_prompt_tokens,
             "completion_tokens": reply.usage.completion_tokens,
             "total_tokens": reply.usage.total_tokens,
+            "model": (reply.raw or {}).get("model", ""),
+            "cache_hit_rate_pct": round(reply.usage.cache_hit_rate * 100.0, 2),
         }
         followup_turn = FollowupTurn(
             turn=turn_number,

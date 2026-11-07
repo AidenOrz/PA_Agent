@@ -41,7 +41,10 @@ class AIProviderSettings(BaseModel):
     api_key_encrypted: str = ""
     thinking: bool = True
     reasoning_effort: Literal["low", "medium", "high", "max"] = "high"
-    context_window: int = 2_000_000
+    #: DeepSeek 官方当前上下文长度为 1M（2026-11 核对）。旧默认 2,000,000 会让
+    #: 上下文占用提示基于一个 Flash 模型根本达不到的窗口。其他模型/网关可在
+    #: 设置里手动覆盖此值。
+    context_window: int = 1_000_000
 
 
 class PromptSettings(BaseModel):
