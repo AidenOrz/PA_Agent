@@ -1,6 +1,7 @@
 # PA Agent 交接文档
 
-> 更新：2026-11-07 ｜ 全面审查修复轮完成（分支 `dev/review-fixes`，10 个修复提交）
+> 更新：2026-11-07 ｜ 全面审查修复轮 + 缓存命中率轮完成（分支 `dev/review-fixes`）
+> 缓存命中率轮见下文「二·七」末尾小节，依据 `docs/会话管理与DeepSeek缓存优化开发文档.md`。
 > 2026-11-03 版记录的 P0/P1/P2/P3 清理与 v0.1.0 发布见下文「二·五」及更早章节；
 > 本轮是又一次全面审查（5 路并行 + 本地实测）后对 P0/P1 的清零，报告见
 > `docs/代码审阅报告_2026-11-07.md`。
@@ -190,6 +191,40 @@ P0×1 与 P1×9 全部修复，每项独立提交（含回归测试）：
     `nightly-e2e.yml`（定时 + 手动，timeout 双保险，失败上传日志）。
 11. 样式：black 全仓收敛（此前 3 个测试文件漂移），ruff 维持基线 197 条。
 
+### 缓存命中率轮（2026-11-07 第二轮，依据 `docs/会话管理与DeepSeek缓存优化开发文档.md` §11 第 1 步）
+
+文档先把「会话恢复」和「缓存命中率」定为同一项上下文管理改造，本轮落地第 1 步
+（逐请求观测 + 续链缺陷修正）。每项独立提交，含回归测试：
+
+1. **顺手修复**（`0a48317`）：`context_window` 默认 2,000,000 → 1,000,000
+   （官方当前上下文 1M；example/README 三处同步）；GUI 不再硬编码「缓存按
+   10% 价格计费」（官方直连为 2%）；追问 usage 记录实际服务模型名与单次命中率。
+2. **S2 链去重**（`9e4d923`）：two_stage 的 `messages_s1` 在校验成功后已含最终
+   原始 assistant（`append_assistant_turn`），`build_stage2_continuation` 又
+   `json.dumps(stage1_json)` 追加一份归一化副本（约 1.2K token/次）。现在链尾
+   已是 assistant 时不再追加；缺回答时追加原始 reply content（围栏原样保留）。
+   新增 `resolve_stage2_cache_mode()`，S2 响应落盘实际 `cache_mode`。
+3. **增量续链追加式**（`eb16d08`）：`build_incremental_stage1` 不再只抽旧第一条
+   user 重建四条消息（丢弃上一轮新增棒、反复重写历史）。新增
+   `_select_incremental_base_chain`：优先复用上一轮 stage2_messages（chain 形态
+   下下一轮 S2 可整体命中该前缀），链尾须为非空 assistant 且 system 与当前构建
+   逐字节一致（提示词升级 → 新建上下文段）。`_kline_shift_vs_previous` 逐棒核对
+   无修订才允许提示词声称「旧表 K{j} = 本轮 K{j+m}」，否则明示以本消息为准
+   （修掉「宣称已重新编号但从未发生」的正确性缺陷）。
+4. **追问实际历史**（`3560a15` 前后提交）：`FollowupTurn.actual_user` 与
+   `_history_full` 的 `actual_content` 分开保存展示问题与实际请求内容（含行情
+   快照表），第二轮续接重发实际内容——不再前缀断裂、重启可恢复原请求。
+5. **Ledger 口径拆分**（`bbc29b7`）：`context_used` = 最近一次请求的实际输入
+   （不是累计 in+out）；进度条/告警随新口径，累计消费仍由 total_* 表达。
+6. 样式（`4301eea`）：ruff 维持基线 197。
+
+**设计文档后续步骤（未做）**：§11 步骤 2-6 —— SQLite 主存储
+（`records/session_store.py`）、会话列表/恢复 UI、策略按需加载一次、
+工作上下文重建、官方 API 对比实验；§7.4 稳定棒标识（K1 重编号改为
+`(来源,品种,周期,ts_open)` 身份）是其中风险最高的一项，需要单独的 feature
+flag 与迁移设计。90% 命中率目标必须以官方 usage 实测兑现（§8.2/§8.3），
+本轮改动只是让它具备结构条件。
+
 ## 三、没做 / 已知遗留
 
 1. **ruff 剩余 197 条**未清理：都是需要逐条判断语义的（E402 延迟导入是刻意的循环依赖规避、SIM102
@@ -219,6 +254,10 @@ git clone --depth 1 file:///E:/PA_Agent .tmp-cleancheck && cd .tmp-cleancheck &&
 - 改数据源清单/新增数据源：`tests/unit/test_sources_registry.py`（注册表不变量）、`test_baostock_source.py`、
   `test_binance_source.py`；说明见 `docs/数据源注册表与新数据源.md`。
 - 改校验/规范化：`test_section14_gate.py`、`test_no_order_helper.py`、`test_validation_lenient_fixes.py`。
+- 改缓存/续链：`tests/unit/test_prompt_assembler.py`（S2 链结构、增量追加式、
+  K 编号映射）、`test_free_chat_actual_history.py`（追问实际历史）、
+  `test_cost_and_ledger.py`（Token 双口径）；设计依据
+  `docs/会话管理与DeepSeek缓存优化开发文档.md`。
 - 调试挂死：`tools/dump_pa_stack.bat`（窗口卡死时转储线程栈）或 pytest 的 `faulthandler`。
 - 提交前：`black pa_agent tests tools` + `ruff check`，勿新增 lint 项。
 
