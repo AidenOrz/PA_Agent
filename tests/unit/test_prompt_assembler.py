@@ -387,6 +387,81 @@ def test_stage2_continuation_prefix_chain_reuses_stage1(assembler: PromptAssembl
     assert "完整 K 线表与几何特征已包含在上方阶段一用户消息中" in s2_user
 
 
+def test_stage2_chain_does_not_duplicate_assistant_when_chain_already_has_it(
+    assembler: PromptAssembler,
+):
+    """成功链末尾已含最终 assistant 时，不得再追加归一化副本（开发文档 §7.3）。
+
+    two_stage 的 messages_s1 在 validate_with_retry 成功后已带原始回答；
+    旧实现又 json.dumps(stage1_json) 追加一份，S2 每次多耗 ~1.2K token。
+    """
+    frame = _make_frame()
+    stage1_json = {
+        "cycle_position": "normal_channel",
+        "direction": "bullish",
+        "gate_result": "proceed",
+    }
+    raw_reply = '{"cycle_position":"normal_channel","direction":"bullish"}'
+    stage1_messages = assembler.build_stage1(frame) + [
+        {"role": "assistant", "content": raw_reply}
+    ]
+
+    messages = assembler.build_stage2_continuation(
+        frame=frame,
+        stage1_messages=stage1_messages,
+        stage1_reply_content=raw_reply,
+        stage1_json=stage1_json,
+        strategy_files=["上涨通道分析识别.txt"],
+        experience_entries=[],
+        use_prefix_chain=True,
+    )
+
+    assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
+    # 唯一的 assistant 就是链里已有的原始回答，逐字节相同
+    assert messages[2]["content"] == raw_reply
+
+
+def test_stage2_chain_appends_raw_reply_not_normalized_copy(assembler: PromptAssembler):
+    """调用方传入的链不含回答时，追加原始 reply content（§7.3：不重新美化 JSON）。"""
+    frame = _make_frame()
+    stage1_json = {"cycle_position": "normal_channel", "direction": "bullish"}
+    # 原始输出带围栏和多余文本——真实模型输出常见形态
+    raw_reply = (
+        '好的，以下是诊断结果：\n\n```json\n'
+        '{"cycle_position": "normal_channel", "direction": "bullish"}\n```'
+    )
+
+    messages = assembler.build_stage2_continuation(
+        frame=frame,
+        stage1_messages=assembler.build_stage1(frame),
+        stage1_reply_content=raw_reply,
+        stage1_json=stage1_json,
+        strategy_files=["上涨通道分析识别.txt"],
+        experience_entries=[],
+        use_prefix_chain=True,
+    )
+
+    assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
+    assert messages[2]["content"] == raw_reply
+
+
+def test_resolve_stage2_cache_mode_records_actual_form() -> None:
+    """resolve_stage2_cache_mode：链式支持 + 设置共同决定实际形态。"""
+    from types import SimpleNamespace
+
+    assembler = PromptAssembler(Path("_"), prompt_settings=None)
+    # None provider → 视为支持链式，跟随设置默认 chain
+    assert assembler.resolve_stage2_cache_mode(None) == "chain"
+    # 设置强制 standalone → standalone
+    standalone = PromptAssembler(
+        Path("_"), prompt_settings=SimpleNamespace(stage2_cache_mode="standalone")
+    )
+    assert standalone.resolve_stage2_cache_mode(None) == "standalone"
+    # 非 DeepSeek 网关（qclaw/openclaw 类）不支持链式 → 自动降级 standalone
+    qclaw = SimpleNamespace(base_url="http://127.0.0.1:8765/v1", model="openclaw", api_key="k")
+    assert assembler.resolve_stage2_cache_mode(qclaw) == "standalone"
+
+
 def test_stage2_standalone_mode_drops_stage1_chain(assembler: PromptAssembler):
     """prompt.stage2_cache_mode=standalone keeps S1 out of the S2 request."""
     from types import SimpleNamespace

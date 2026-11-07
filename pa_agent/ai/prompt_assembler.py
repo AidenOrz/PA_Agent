@@ -947,6 +947,21 @@ class PromptAssembler:
         mode = str(getattr(cfg, "stage2_cache_mode", "chain") or "chain").strip().lower()
         return mode if mode in ("chain", "standalone") else "chain"
 
+    def resolve_stage2_cache_mode(self, provider_settings: Any | None = None) -> str:
+        """Resolve the *actual* Stage 2 request form for this provider/settings.
+
+        Returns "chain" only when the provider supports KV prefix chaining AND
+        the setting does not force standalone; otherwise "standalone".  The
+        orchestrator records this on the stage2 response so saved records show
+        the form that actually ran, not just the configured default
+        (开发文档 §3.1：代码默认改为 chain 不等于实际调用已经使用 chain).
+        """
+        from pa_agent.ai.deepseek_client import supports_kv_prefix_chain
+
+        if not supports_kv_prefix_chain(provider_settings):
+            return "standalone"
+        return self._stage2_cache_mode()
+
     # ── Process-level system-prompt cache ────────────────────────────────────
     # DeepSeek KV Cache hits require the *prefix* of consecutive requests to
     # be byte-identical.  System prompts are fully static (persona + txt files)
@@ -1601,7 +1616,11 @@ class PromptAssembler:
         """Build Stage 2 messages, optionally chaining after Stage 1 for KV cache.
 
         Prefix-chain mode (DeepSeek native, default when safe):
-          [system, user(S1…), assistant(S1 JSON), user(S2 task only)]
+          [system, user(S1…), assistant(S1 原始回答), user(S2 task only)]
+
+        The S1 assistant turn is the model's RAW reply content, appended only
+        when the caller's stage1_messages does not already end with it
+        (validation_retry 已追加最终回答时不得再追加归一化副本，开发文档 §7.3).
 
         Standalone mode (OpenClaw Agent and similar):
           [system, user(S2 task + full K-line tables)]
@@ -1609,10 +1628,7 @@ class PromptAssembler:
         from pa_agent.ai.deepseek_client import supports_kv_prefix_chain
 
         if use_prefix_chain is None:
-            use_prefix_chain = (
-                supports_kv_prefix_chain(provider_settings)
-                and self._stage2_cache_mode() != "standalone"
-            )
+            use_prefix_chain = self.resolve_stage2_cache_mode(provider_settings) == "chain"
 
         chain_after_s1 = bool(use_prefix_chain and stage1_messages)
         stage2_user_content = self._build_stage2_user_prompt(
@@ -1628,12 +1644,20 @@ class PromptAssembler:
         )
 
         if chain_after_s1:
-            assistant_content = self._normalize_stage1_assistant_for_chain(
-                stage1_json,
-                stage1_reply_content,
-            )
             chain = [dict(m) for m in stage1_messages]
-            chain.append({"role": "assistant", "content": assistant_content})
+            if chain and chain[-1].get("role") == "assistant":
+                # 成功链的末尾已是最终 assistant（validation_retry.append_assistant_turn）：
+                # 原始回答只此一份，不再追加归一化副本（开发文档 §7.3——重复的诊断
+                # 副本每次 S2 请求多耗约 1.2K token，且重排后的文本与真实输出不一致）。
+                pass
+            else:
+                # 调用方传入的 stage1_messages 不含回答（如 build_stage1 原始输出）：
+                # 追加原始 reply content（模型真实产出，含围栏也原样保留）；
+                # 仅当原始内容缺失时才退回归一化 JSON。
+                assistant_content = (stage1_reply_content or "").strip() or (
+                    self._normalize_stage1_assistant_for_chain(stage1_json, stage1_reply_content)
+                )
+                chain.append({"role": "assistant", "content": assistant_content})
             chain.append({"role": "user", "content": stage2_user_content})
             return chain
 

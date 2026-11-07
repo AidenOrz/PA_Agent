@@ -351,6 +351,19 @@ def _partial_response(
     }
 
 
+def _with_stage2_cache_mode(raw: Any, cache_mode: str) -> Any:
+    """Attach the actually-used Stage 2 request form to a raw response dict.
+
+    配置默认 ≠ 实际形态：provider 不支持链式时请求会自动降级 standalone。
+    落盘时记录真实形态，命中率统计与诊断才有分母口径（开发文档 §3.1/§8.2）。
+    """
+    if isinstance(raw, dict) and "cache_mode" not in raw:
+        tagged = dict(raw)
+        tagged["cache_mode"] = cache_mode
+        return tagged
+    return raw
+
+
 def _messages_with_partial_reply(
     messages: list[dict[str, Any]],
     exc: Exception,
@@ -870,6 +883,11 @@ class TwoStageOrchestrator:
             )
             or 3
         )
+        # 实际请求形态在发起前解析一次：provider 不支持链式时自动降级
+        # standalone，随响应落盘的才是真实形态而非配置默认（§3.1/§8.2）。
+        s2_cache_mode = self._assembler.resolve_stage2_cache_mode(
+            getattr(self._settings, "provider", None)
+        )
         messages_s2 = self._assembler.build_stage2_continuation(
             frame=frame,
             stage1_messages=messages_s1,
@@ -881,6 +899,7 @@ class TwoStageOrchestrator:
             previous_record=previous_record,
             enable_next_bar_prediction=_enable_next_bar,
             provider_settings=getattr(self._settings, "provider", None),
+            use_prefix_chain=(s2_cache_mode == "chain"),
             structure_flip_cooldown_bars=_flip_cooldown,
         )
 
@@ -939,7 +958,9 @@ class TwoStageOrchestrator:
                     "stage1_response": reply_s1.raw,
                     "stage1_diagnosis": stage1_json,
                     "stage2_messages": _messages_with_partial_reply(messages_s2, exc),
-                    "stage2_response": _partial_response(exc, stage="stage2"),
+                    "stage2_response": _with_stage2_cache_mode(
+                        _partial_response(exc, stage="stage2"), s2_cache_mode
+                    ),
                     "strategy_files_used": strategy_files,
                     "experience_loaded": [
                         e.model_dump() if hasattr(e, "model_dump") else dict(e)
@@ -973,7 +994,7 @@ class TwoStageOrchestrator:
                     "stage1_response": reply_s1.raw,
                     "stage1_diagnosis": stage1_json,
                     "stage2_messages": messages_s2,
-                    "stage2_response": reply_s2.raw,
+                    "stage2_response": _with_stage2_cache_mode(reply_s2.raw, s2_cache_mode),
                     "strategy_files_used": strategy_files,
                     "experience_loaded": [
                         e.model_dump() if hasattr(e, "model_dump") else dict(e)
@@ -1061,10 +1082,13 @@ class TwoStageOrchestrator:
                     "stage2_messages": _messages_with_partial_reply(
                         retry_exc.messages, retry_exc.cause
                     ),
-                    "stage2_response": _partial_response(
-                        retry_exc.cause,
-                        stage="stage2",
-                        fallback_reply=retry_exc.reply,
+                    "stage2_response": _with_stage2_cache_mode(
+                        _partial_response(
+                            retry_exc.cause,
+                            stage="stage2",
+                            fallback_reply=retry_exc.reply,
+                        ),
+                        s2_cache_mode,
                     ),
                     "strategy_files_used": strategy_files,
                     "experience_loaded": [
@@ -1105,7 +1129,7 @@ class TwoStageOrchestrator:
                     "stage1_response": reply_s1.raw,
                     "stage1_diagnosis": stage1_json,
                     "stage2_messages": messages_s2,
-                    "stage2_response": reply_s2.raw,
+                    "stage2_response": _with_stage2_cache_mode(reply_s2.raw, s2_cache_mode),
                     "strategy_files_used": strategy_files,
                     "experience_loaded": [
                         e.model_dump() if hasattr(e, "model_dump") else dict(e)
@@ -1187,7 +1211,7 @@ class TwoStageOrchestrator:
                 "stage1_response": reply_s1.raw,
                 "stage1_diagnosis": stage1_json,
                 "stage2_messages": messages_s2,
-                "stage2_response": reply_s2.raw,
+                "stage2_response": _with_stage2_cache_mode(reply_s2.raw, s2_cache_mode),
                 "stage2_decision": stage2_json,
                 "strategy_files_used": strategy_files,
                 "experience_loaded": [
